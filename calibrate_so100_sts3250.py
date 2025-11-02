@@ -5,9 +5,18 @@ This will guide you through the LeRobot calibration process to set min/max limit
 """
 
 import sys
+import json
+from pathlib import Path
 from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
 from lerobot.robots.so100_follower.config_so100_follower import SO100FollowerConfig
 from so100_sts3250 import SO100FollowerSTS3250
+
+
+def load_config(config_path="config.json"):
+    """Load configuration from JSON file."""
+    config_file = Path(__file__).parent / config_path
+    with open(config_file, 'r') as f:
+        return json.load(f)
 
 
 def main():
@@ -26,9 +35,12 @@ def main():
         print("Calibration cancelled.")
         return 1
 
+    # Load configuration from config.json
+    config = load_config()
+
     # Configure robot
-    follower_port = "/dev/ttyACM1"
-    follower_id = "so100_sts3250"
+    follower_port = config["follower"]["port"]
+    follower_id = config["follower"]["id"]
 
     # Minimal camera config (calibration doesn't need cameras)
     camera_config = {}
