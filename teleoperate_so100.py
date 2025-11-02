@@ -27,9 +27,6 @@ def main():
     print("SO100 STS3250 Leader-Follower Teleoperation")
     print("=" * 70)
     print()
-    print("This will set up teleoperation where the follower mirrors the leader.")
-    print("Move the leader arm physically, and the follower will follow.")
-    print()
 
     # Leader arm configuration (serial ending 835)
     leader_port = "/dev/ttyACM0"  # Update this after connecting the leader
@@ -48,16 +45,6 @@ def main():
     print(f"Leader arm port: {leader_port}")
     print(f"Follower arm port: {follower_port}")
     print()
-
-    # Check if running interactively
-    import sys
-    if sys.stdin.isatty():
-        response = input("Ready to connect? (yes/no): ")
-        if response.lower() not in ['yes', 'y']:
-            print("Teleoperation cancelled.")
-            return 1
-    else:
-        print("Running in non-interactive mode, proceeding automatically...")
 
     # Configure and connect leader
     print(f"\nConnecting to leader arm at {leader_port}...")
