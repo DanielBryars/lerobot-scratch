@@ -15,11 +15,20 @@ Controls:
 
 import time
 import sys
+import json
+from pathlib import Path
 from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
 from lerobot.robots.so100_follower.config_so100_follower import SO100FollowerConfig
 from lerobot.teleoperators.so100_leader.config_so100_leader import SO100LeaderConfig
 from so100_sts3250 import SO100FollowerSTS3250
 from so100_leader_sts3250 import SO100LeaderSTS3250
+
+
+def load_config(config_path="config.json"):
+    """Load configuration from JSON file."""
+    config_file = Path(__file__).parent / config_path
+    with open(config_file, 'r') as f:
+        return json.load(f)
 
 
 def main():
@@ -31,18 +40,26 @@ def main():
     print("Move the leader arm physically, and the follower will follow.")
     print()
 
-    # Leader arm configuration (serial ending 835)
-    leader_port = "/dev/ttyACM0"  # Update this after connecting the leader
-    leader_id = "leader_so100"
+    # Load configuration from config.json
+    config = load_config()
 
-    # Follower arm configuration (serial 5AB0181764)
-    follower_port = "/dev/ttyACM1"
-    follower_id = "follower_so100"
+    # Leader arm configuration
+    leader_port = config["leader"]["port"]
+    leader_id = config["leader"]["id"]
+
+    # Follower arm configuration
+    follower_port = config["follower"]["port"]
+    follower_id = config["follower"]["id"]
 
     # Camera configuration for follower (optional for teleoperation, but useful for recording)
     camera_config = {
-        "base_0_rgb": OpenCVCameraConfig(index_or_path="/dev/video4", width=640, height=360, fps=30),  # Nuroum V11 (overhead)
-        "left_wrist_0_rgb": OpenCVCameraConfig(index_or_path="/dev/video0", width=640, height=480, fps=30),  # USB2.0_CAM1 (wrist)
+        name: OpenCVCameraConfig(
+            index_or_path=cam["index_or_path"],
+            width=cam["width"],
+            height=cam["height"],
+            fps=cam["fps"]
+        )
+        for name, cam in config["cameras"].items()
     }
 
     print(f"Leader arm port: {leader_port}")

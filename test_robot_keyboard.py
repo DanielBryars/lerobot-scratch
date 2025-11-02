@@ -15,9 +15,18 @@ Controls:
 import sys
 import termios
 import tty
+import json
+from pathlib import Path
 from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
 from lerobot.robots.so100_follower.config_so100_follower import SO100FollowerConfig
 from so100_sts3250 import SO100FollowerSTS3250
+
+
+def load_config(config_path="config.json"):
+    """Load configuration from JSON file."""
+    config_file = Path(__file__).parent / config_path
+    with open(config_file, 'r') as f:
+        return json.load(f)
 
 
 def get_key():
@@ -37,14 +46,22 @@ def main():
     print("SO100 STS3250 Keyboard Control Test")
     print("=" * 60)
 
-    # Configure robot
-    follower_port = "/dev/ttyACM1"
-    follower_id = "test_robot"
+    # Load configuration from config.json
+    config = load_config()
 
-    # Minimal camera config (you can remove cameras if not testing them)
+    # Configure robot
+    follower_port = config["follower"]["port"]
+    follower_id = config["follower"]["id"]
+
+    # Camera configuration
     camera_config = {
-        "base_0_rgb": OpenCVCameraConfig(index_or_path=4, width=640, height=480, fps=30),
-        "left_wrist_0_rgb": OpenCVCameraConfig(index_or_path=0, width=640, height=480, fps=30),
+        name: OpenCVCameraConfig(
+            index_or_path=cam["index_or_path"],
+            width=cam["width"],
+            height=cam["height"],
+            fps=cam["fps"]
+        )
+        for name, cam in config["cameras"].items()
     }
 
     robot_cfg = SO100FollowerConfig(port=follower_port, id=follower_id, cameras=camera_config)
