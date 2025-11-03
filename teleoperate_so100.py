@@ -88,6 +88,13 @@ def main():
         leader.disconnect()
         return 1
 
+    # Sync follower to leader initial position
+    print("\nSyncing follower to leader initial position...")
+    initial_action = leader.get_action()
+    follower.send_action(initial_action)
+    time.sleep(0.5)  # Give time for movement
+    print("✓ Initial sync complete")
+
     print("\n" + "=" * 70)
     print("Teleoperation Active!")
     print("=" * 70)
@@ -106,7 +113,10 @@ def main():
 
             # Print status every 100 steps
             if step % 100 == 0:
-                print(f"Step {step}: Teleoperation running...")
+                # Get joint names and print positions
+                joint_names = ["shoulder_pan.pos", "shoulder_lift.pos", "elbow_flex.pos", "wrist_flex.pos", "wrist_roll.pos", "gripper.pos"]
+                positions = [f"{name}: {action[name]:.2f}" for name in joint_names if name in action]
+                print(f"Step {step}: {' | '.join(positions)}")
 
             step += 1
 
