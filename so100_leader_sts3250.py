@@ -55,9 +55,9 @@ class SO100LeaderSTS3250(SO100Leader):
             "gripper": MotorCalibration(
                 id=6,
                 drive_mode=0,
-                homing_offset=2048,
-                range_min=0,
-                range_max=4095
+                homing_offset=2655,  # Midpoint of 2089-3221
+                range_min=2089,  # Closed position
+                range_max=3221   # Open position
             ),
         }
 

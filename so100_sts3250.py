@@ -55,9 +55,9 @@ class SO100FollowerSTS3250(SO100Follower):
             "gripper": MotorCalibration(
                 id=6,
                 drive_mode=0,
-                homing_offset=500,
-                range_min=0,
-                range_max=4095
+                homing_offset=2139,  # Midpoint of 1537-2741
+                range_min=1537,  # Closed position
+                range_max=2741   # Open position
             ),
         }
 
