@@ -1,26 +1,19 @@
 {
   "leader": {
-    "port": "/dev/ttyACM0",
+    "port": "COM8",
     "id": "leader_so100"
   },
   "follower": {
-    "port": "/dev/ttyACM1",
+    "port": "COM7",
     "id": "follower_so100"
   },
   "cameras": {
     "left_wrist_0_rgb": {
-      "index_or_path": "/dev/video0",
+      "index_or_path": 0,
       "width": 640,
       "height": 480,
       "fps": 30,
-      "description": "USB2.0_CAM1: USB2.0_CAM1 (wrist)"
-    },
-    "base_0_rgb": {
-      "index_or_path": "/dev/video2",
-      "width": 640,
-      "height": 360,
-      "fps": 30,
-      "description": "Nuroum V11: Nuroum V11 (overhead)"
+      "description": "Camera 0 (likely ARC wrist - 640x480)"
     }
   }
 }

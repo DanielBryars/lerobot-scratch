@@ -1,7 +1,16 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git mv:*)"
+      "Bash(git mv:*)",
+      "Bash(cmd /c \"mkdir linux 2>nul & mkdir windows 2>nul & echo Directories created\")",
+      "Bash(test:*)",
+      "Bash(python:*)",
+      "WebSearch",
+      "Bash(venv/Scripts/activate:*)",
+      "Bash(lerobot-find-cameras:*)",
+      "Bash(venv\\Scripts\\python.exe:*)",
+      "Bash(venv/Scripts/python.exe -m lerobot.scripts.find_cameras:*)",
+      "Bash(venv/Scripts/python.exe:*)"
     ],
     "deny": [],
     "ask": []
