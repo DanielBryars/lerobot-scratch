@@ -48,16 +48,8 @@ def main():
     follower_port = config["follower"]["port"]
     follower_id = config["follower"]["id"]
 
-    # Camera configuration for follower (optional for teleoperation, but useful for recording)
-    camera_config = {
-        name: OpenCVCameraConfig(
-            index_or_path=cam["index_or_path"],
-            width=cam["width"],
-            height=cam["height"],
-            fps=cam["fps"]
-        )
-        for name, cam in config["cameras"].items()
-    }
+    # Camera configuration for follower - empty for teleoperation (cameras only needed for recording)
+    camera_config = {}
 
     print(f"Leader arm port: {leader_port}")
     print(f"Follower arm port: {follower_port}")
@@ -70,9 +62,9 @@ def main():
 
     try:
         leader.connect()
-        print("✓ Leader arm connected successfully!")
+        print("[OK] Leader arm connected successfully!")
     except Exception as e:
-        print(f"✗ Failed to connect to leader: {e}")
+        print(f"[ERROR] Failed to connect to leader: {e}")
         return 1
 
     # Configure and connect follower
@@ -82,9 +74,9 @@ def main():
 
     try:
         follower.connect()
-        print("✓ Follower arm connected successfully!")
+        print("[OK] Follower arm connected successfully!")
     except Exception as e:
-        print(f"✗ Failed to connect to follower: {e}")
+        print(f"[ERROR] Failed to connect to follower: {e}")
         leader.disconnect()
         return 1
 
@@ -93,7 +85,7 @@ def main():
     initial_action = leader.get_action()
     follower.send_action(initial_action)
     time.sleep(0.5)  # Give time for movement
-    print("✓ Initial sync complete")
+    print("[OK] Initial sync complete")
 
     print("\n" + "=" * 70)
     print("Teleoperation Active!")
@@ -126,7 +118,7 @@ def main():
     except KeyboardInterrupt:
         print("\n\nTeleoperation stopped by user.")
     except Exception as e:
-        print(f"\n\n✗ Error during teleoperation: {e}")
+        print(f"\n\n[ERROR] Error during teleoperation: {e}")
         import traceback
         traceback.print_exc()
         return 1

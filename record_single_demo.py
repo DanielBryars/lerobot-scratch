@@ -6,6 +6,9 @@ Usage:
     python record_single_demo.py --repo-id danbhf/test_demo --task "pick and place"
 """
 
+# IMPORTANT: Import camera backend fix BEFORE any lerobot imports
+import fix_camera_backend  # This fixes Windows MSMF -> DSHOW issue
+
 import argparse
 import time
 import sys
@@ -39,7 +42,7 @@ def main():
     parser.add_argument(
         "--task",
         type=str,
-        default="demonstration",
+        default="Pick white lego block and place it in the blue triangle",
         help="Task description"
     )
     parser.add_argument(
@@ -97,9 +100,9 @@ def main():
     print(f"Connecting to leader at {leader_port}...")
     try:
         leader.connect()
-        print("✓ Leader connected")
+        print("[OK] Leader connected")
     except Exception as e:
-        print(f"✗ Failed: {e}")
+        print(f"[FAILED] {e}")
         return 1
 
     # Connect to follower
@@ -114,9 +117,9 @@ def main():
     print(f"Connecting to follower at {follower_port}...")
     try:
         follower.connect()
-        print("✓ Follower connected")
+        print("[OK] Follower connected")
     except Exception as e:
-        print(f"✗ Failed: {e}")
+        print(f"[FAILED] {e}")
         leader.disconnect()
         return 1
 
@@ -129,7 +132,7 @@ def main():
         except Exception as e:
             print(f"  Warning: {e}")
             time.sleep(0.2)
-    print("✓ Cameras ready")
+    print("[OK] Cameras ready")
 
     # Create dataset
     print(f"\nCreating dataset: {args.repo_id}")
@@ -148,9 +151,9 @@ def main():
             image_writer_threads=4,
             features=features,
         )
-        print("✓ Dataset created")
+        print("[OK] Dataset created")
     except Exception as e:
-        print(f"✗ Failed to create dataset: {e}")
+        print(f"[FAILED] Failed to create dataset: {e}")
         follower.disconnect()
         leader.disconnect()
         return 1
@@ -168,7 +171,7 @@ def main():
     try:
         input("Press ENTER to start recording...")
 
-        print("\n🔴 RECORDING - Perform the task now...")
+        print("\n[REC] RECORDING - Perform the task now...")
         print("Press Ctrl+C when finished\n")
 
         # Create episode buffer
@@ -213,7 +216,7 @@ def main():
                     print(f"  Recording... {elapsed:.1f}s ({step} frames)")
 
             except (ConnectionError, TimeoutError) as e:
-                print(f"\n⚠️  Warning: Error at step {step}: {e}")
+                print(f"\n[WARNING] Error at step {step}: {e}")
                 print("Skipping this frame and continuing...")
                 time.sleep(0.1)
                 continue
@@ -225,32 +228,41 @@ def main():
                 time.sleep(sleep_time)
 
     except KeyboardInterrupt:
-        print(f"\n\n⏸️  Recording stopped ({step} frames)")
+        print(f"\n\n[STOPPED] Recording stopped ({step} frames)")
         print("\nType 's' to SAVE or 'd' to DISCARD: ", end='')
         choice = input().strip().lower()
 
         if choice == 's':
             print("\nSaving episode...")
             dataset.save_episode()
-            print(f"✓ Episode saved!")
+            print(f"[OK] Episode saved!")
             print(f"\nDataset location: {Path(args.root) / args.repo_id}")
             print(f"Frames recorded: {step}")
             print(f"Duration: {step / args.fps:.1f} seconds")
         else:
-            print("✗ Episode discarded")
-            follower.disconnect()
-            leader.disconnect()
+            print("[DISCARDED] Episode discarded")
+            # Don't disconnect here - finally block will handle it
             return 0
 
     except Exception as e:
-        print(f"\n✗ Error: {e}")
+        print(f"\n[ERROR] {e}")
         import traceback
         traceback.print_exc()
         return 1
 
     finally:
-        follower.disconnect()
-        leader.disconnect()
+        # Safely disconnect devices (check if connected first)
+        try:
+            if follower.is_connected:
+                follower.disconnect()
+        except Exception:
+            pass  # Already disconnected
+
+        try:
+            if leader.is_connected:
+                leader.disconnect()
+        except Exception:
+            pass  # Already disconnected
 
     # Now upload to HuggingFace
     print("\n" + "=" * 70)
@@ -264,11 +276,11 @@ def main():
         print("\nUploading to HuggingFace Hub...")
         try:
             dataset.push_to_hub()
-            print(f"\n✓ Upload complete!")
+            print(f"\n[OK] Upload complete!")
             print(f"\nView your dataset at:")
             print(f"https://huggingface.co/datasets/{args.repo_id}")
         except Exception as e:
-            print(f"\n✗ Upload failed: {e}")
+            print(f"\n[FAILED] Upload failed: {e}")
             print("\nYou can upload manually later with:")
             print(f"  python -m lerobot.scripts.push_dataset_to_hub --repo-id {args.repo_id} --local-dir {Path(args.root) / args.repo_id}")
             return 1

@@ -1,0 +1,98 @@
+_wandb:
+    value:
+        cli_version: 0.21.4
+        e:
+            xz016s8cobasav4097mcy1nj8ykdrddh:
+                codePath: openvla_finetune.py
+                codePathLocal: openvla_finetune.py
+                cpu_count: 16
+                cpu_count_logical: 32
+                cudaVersion: "12.9"
+                disk:
+                    /:
+                        total: "1000186310656"
+                        used: "893219127296"
+                email: bryars@hotmail.com
+                executable: D:\git\lerobot-scratch\venv\Scripts\python.exe
+                git:
+                    commit: 3a53519cfc5a73188df10da7d2e6882541300876
+                    remote: git@github.com:DanielBryars/lerobot-scratch.git
+                gpu: NVIDIA GeForce RTX 5090
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Blackwell
+                      cudaCores: 21760
+                      memoryTotal: "34190917632"
+                      name: NVIDIA GeForce RTX 5090
+                      uuid: GPU-a7a207c3-0758-e34f-cc75-1ea3e42f9e0f
+                host: SHED
+                memory:
+                    total: "68318273536"
+                os: Windows-11-10.0.26200-SP0
+                program: D:\git\lerobot-scratch\openvla_finetune.py
+                python: CPython 3.13.2
+                root: D:\git\lerobot-scratch
+                startedAt: "2025-11-24T13:15:42.104053Z"
+                writerId: xz016s8cobasav4097mcy1nj8ykdrddh
+        m: []
+        python_version: 3.13.2
+        t:
+            "1":
+                - 1
+            "2":
+                - 1
+                - 11
+                - 41
+                - 49
+                - 63
+                - 71
+                - 98
+            "3":
+                - 13
+                - 16
+            "4": 3.13.2
+            "5": 0.21.4
+            "8":
+                - 3
+            "12": 0.21.4
+            "13": windows-amd64
+batch_size:
+    value: 4
+dataset_root:
+    value: ./datasets/merged_training_set
+eval_freq:
+    value: 500
+grad_accumulation_steps:
+    value: 4
+learning_rate:
+    value: 0.0005
+log_freq:
+    value: 10
+lora_alpha:
+    value: 16
+lora_dropout:
+    value: 0
+lora_rank:
+    value: 32
+max_steps:
+    value: 10000
+output_dir:
+    value: ./outputs/openvla_finetuned
+robot_config_path:
+    value: ./config.json
+save_freq:
+    value: 500
+use_lora:
+    value: true
+use_quantization:
+    value: true
+use_wandb:
+    value: true
+vla_path:
+    value: openvla/openvla-7b
+wandb_entity:
+    value: null
+wandb_project:
+    value: openvla-so100
+warmup_steps:
+    value: 100
