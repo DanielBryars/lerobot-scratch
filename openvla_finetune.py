@@ -49,8 +49,8 @@ class FinetuneConfig:
     batch_size: int = 16
     grad_accumulation_steps: int = 2  # Effective batch size = 32
     learning_rate: float = 5e-4
-    max_steps: int = 10000
-    warmup_steps: int = 100
+    max_steps: int = 2500  # ~6 epochs over 12.9k samples at batch 32
+    warmup_steps: int = 50
 
     # LoRA settings
     use_lora: bool = True
@@ -142,6 +142,13 @@ class LeRobotOpenVLADataset(Dataset):
         self.samples = []
         self._load_samples(max_samples)
 
+        # Compute action normalization statistics from the dataset
+        print("Computing action normalization statistics...")
+        all_actions = np.array([s['action'] for s in self.samples])
+        self.action_mins = all_actions.min(axis=0)
+        self.action_maxs = all_actions.max(axis=0)
+        print(f"  Action ranges: min={self.action_mins}, max={self.action_maxs}")
+
         # Cache for video captures to avoid repeated opening
         self._video_cache = {}
 
@@ -209,10 +216,17 @@ class LeRobotOpenVLADataset(Dataset):
                     return
 
     def _extract_frame_from_video(self, image_key: str, global_index: int) -> Image.Image:
-        """Extract a frame from a video file for a specific camera using global index."""
+        """Extract a frame - either from pre-extracted images or video."""
         import cv2
 
-        # Find which video file contains this global index
+        # Check if pre-extracted frames exist (MUCH faster)
+        frames_dir = self.dataset_root / "frames" / image_key
+        if frames_dir.exists():
+            frame_path = frames_dir / f"{global_index:06d}.jpg"
+            if frame_path.exists():
+                return Image.open(frame_path).convert('RGB')
+
+        # Fall back to video extraction (slow)
         video_map = self.video_maps.get(image_key, [])
         video_info = None
 
@@ -337,15 +351,19 @@ class LeRobotOpenVLADataset(Dataset):
         # Remove batch dimension
         inputs = {k: v.squeeze(0) for k, v in inputs.items()}
 
-        # Tokenize action (OpenVLA uses discrete action tokens)
-        action = sample['action']
-        action_tokens = self.action_tokenizer.tokenize(action)
+        # Normalize action to [-1, 1]
+        raw_action = sample['action']
+        normalized_action = 2.0 * (raw_action - self.action_mins) / (self.action_maxs - self.action_mins + 1e-8) - 1.0
+        normalized_action = np.clip(normalized_action, -1.0, 1.0)
+
+        # Tokenize normalized action
+        action_tokens = self.action_tokenizer.tokenize(normalized_action)
 
         return {
             'input_ids': inputs['input_ids'],
             'attention_mask': inputs['attention_mask'],
             'pixel_values': inputs['pixel_values'],
-            'action': torch.tensor(action, dtype=torch.float32),
+            'action': torch.tensor(normalized_action, dtype=torch.float32),
             'action_tokens': torch.tensor(action_tokens, dtype=torch.long),
             'task': task_desc,
         }
@@ -360,26 +378,21 @@ class ActionTokenizer:
     """
     Tokenizes continuous actions to discrete tokens for OpenVLA.
 
-    OpenVLA uses 256 bins per action dimension, with special tokens
-    for action start/end.
+    OpenVLA uses 256 bins per action dimension.
+    Actions are expected to be in [-1, 1] range (normalized).
     """
 
     def __init__(self, n_bins: int = 256, action_dim: int = 6):
         self.n_bins = n_bins
         self.action_dim = action_dim
 
-        # Action ranges for SO-100 (approximate)
-        # These should be calibrated to your robot's actual ranges
-        self.action_mins = np.array([-180, -180, -180, -180, -180, 0], dtype=np.float32)
-        self.action_maxs = np.array([180, 180, 180, 180, 180, 100], dtype=np.float32)
-
     def tokenize(self, action: np.ndarray) -> np.ndarray:
-        """Convert continuous action to discrete bin indices."""
-        # Clip to valid range
-        action = np.clip(action, self.action_mins, self.action_maxs)
+        """Convert continuous normalized action [-1, 1] to discrete bin indices."""
+        # Clip to [-1, 1]
+        action = np.clip(action, -1.0, 1.0)
 
-        # Normalize to [0, 1]
-        normalized = (action - self.action_mins) / (self.action_maxs - self.action_mins + 1e-8)
+        # Map [-1, 1] to [0, 1]
+        normalized = (action + 1.0) / 2.0
 
         # Convert to bin indices [0, n_bins-1]
         bins = (normalized * (self.n_bins - 1)).astype(np.int64)
@@ -388,12 +401,12 @@ class ActionTokenizer:
         return bins
 
     def detokenize(self, tokens: np.ndarray) -> np.ndarray:
-        """Convert discrete tokens back to continuous actions."""
+        """Convert discrete tokens back to continuous normalized actions [-1, 1]."""
         # Convert bins to [0, 1]
         normalized = tokens.astype(np.float32) / (self.n_bins - 1)
 
-        # Denormalize
-        action = normalized * (self.action_maxs - self.action_mins) + self.action_mins
+        # Map [0, 1] to [-1, 1]
+        action = normalized * 2.0 - 1.0
 
         return action
 
@@ -740,9 +753,11 @@ def main():
         dataset,
         batch_size=cfg.batch_size,
         shuffle=True,
-        num_workers=0,  # Windows compatibility
+        num_workers=4,  # Parallel data loading
         collate_fn=collate_fn,
         pin_memory=True,
+        persistent_workers=True,
+        prefetch_factor=2,
     )
     print()
 
@@ -884,6 +899,15 @@ def main():
         model.save_pretrained(final_path)
 
     processor.save_pretrained(final_path)
+
+    # Save normalization statistics
+    norm_stats = {
+        'action_mins': dataset.action_mins.tolist(),
+        'action_maxs': dataset.action_maxs.tolist(),
+    }
+    with open(final_path / "action_norm_stats.json", 'w') as f:
+        json.dump(norm_stats, f, indent=2)
+    print(f"  Saved action normalization stats")
 
     # Save config
     with open(final_path / "finetune_config.json", 'w') as f:
