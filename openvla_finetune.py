@@ -50,7 +50,7 @@ class FinetuneConfig:
     vla_path: str = "openvla/openvla-7b"
 
     # Dataset
-    dataset_root: str = "./datasets/20251124_233735"
+    dataset_root: str = "./datasets/20251124_233735_5hz"  # 5Hz downsampled for OpenVLA
     robot_config_path: str = "./config.json"  # Load camera config from here
 
     # Output
