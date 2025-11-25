@@ -1,26 +1,15 @@
 #!/usr/bin/env python3
 """
-OpenVLA Fine-tuning Script for LeRobot Datasets (Official Approach).
+OpenVLA Fine-tuning Script for LeRobot Datasets.
 
 Fine-tunes the OpenVLA-7B model on local LeRobot datasets using LoRA
 for parameter-efficient training.
-
-This version uses the official OpenVLA loss computation approach:
-- Uses model's built-in unified loss (output.loss)
-- Cross-entropy on all tokens including action tokens
-- No manual loss combination or weighting
-
-For the old custom loss approach, see: openvla_finetune_customloss.py
 
 Usage:
     python openvla_finetune.py
 
 Requirements:
     pip install transformers accelerate peft bitsandbytes wandb
-
-References:
-    - https://github.com/openvla/openvla
-    - https://arxiv.org/html/2406.09246v3
 """
 
 import os
@@ -473,13 +462,6 @@ def compute_action_loss(logits, action_tokens, action_dim=6):
     """
     Compute cross-entropy loss for action prediction.
 
-    NOTE: This function is NOT used in the official OpenVLA training approach.
-    The official method uses a unified loss from the model itself (output.loss),
-    which internally computes cross-entropy on all tokens including actions.
-
-    This custom implementation is kept for reference only.
-    See openvla_finetune_customloss.py for the old manual loss combination approach.
-
     OpenVLA predicts actions as discrete tokens, so we use CE loss.
     """
     # Get the action prediction logits (last action_dim tokens)
@@ -832,6 +814,8 @@ def main():
         """Evaluate model on validation set."""
         model.eval()
         val_losses = []
+        val_action_losses = []
+        val_lm_losses = []
 
         with torch.no_grad():
             for batch in tqdm(val_dataloader, desc="  Validation", leave=False):
@@ -850,15 +834,24 @@ def main():
                         labels=input_ids,
                     )
 
-                    # Use unified loss (official OpenVLA approach)
-                    loss = outputs.loss
+                    lm_loss = outputs.loss
+                    action_loss = compute_action_loss(
+                        outputs.logits,
+                        action_tokens,
+                        action_dim=6,
+                    )
+                    loss = lm_loss + 0.1 * action_loss
 
                 val_losses.append(loss.item())
+                val_action_losses.append(action_loss.item())
+                val_lm_losses.append(lm_loss.item())
 
         model.train()
 
         return {
             'val_loss': np.mean(val_losses),
+            'val_action_loss': np.mean(val_action_losses),
+            'val_lm_loss': np.mean(val_lm_losses),
         }
 
     # Training loop
@@ -897,13 +890,21 @@ def main():
                     input_ids=input_ids,
                     attention_mask=attention_mask,
                     pixel_values=pixel_values,
-                    labels=input_ids,  # Causal LM loss on all tokens including actions
+                    labels=input_ids,  # For language modeling loss
                 )
 
-                # Use model's built-in unified loss (official OpenVLA approach)
-                # The model internally computes cross-entropy on all tokens,
-                # including the action tokens that were tokenized as part of the sequence
-                loss = outputs.loss
+                # Combine LM loss with action prediction loss
+                lm_loss = outputs.loss
+
+                # Simple action loss based on final hidden states
+                # This is a simplified version - full OpenVLA uses action tokens
+                action_loss = compute_action_loss(
+                    outputs.logits,
+                    action_tokens,
+                    action_dim=6,
+                )
+
+                loss = lm_loss + 0.1 * action_loss
 
             # Backward pass
             normalized_loss = loss / cfg.grad_accumulation_steps
@@ -962,10 +963,14 @@ def main():
                     print(f"  Step {global_step}:")
                     print(f"    Train loss: {avg_loss:.4f}")
                     print(f"    Val loss: {val_metrics['val_loss']:.4f}")
+                    print(f"    Val action loss: {val_metrics['val_action_loss']:.4f}")
+                    print(f"    Val LM loss: {val_metrics['val_lm_loss']:.4f}")
 
                     if cfg.use_wandb:
                         wandb.log({
                             'val_loss': val_metrics['val_loss'],
+                            'val_action_loss': val_metrics['val_action_loss'],
+                            'val_lm_loss': val_metrics['val_lm_loss'],
                             'step': global_step,
                         })
 
@@ -997,6 +1002,8 @@ def main():
                             json.dump({
                                 'step': global_step,
                                 'val_loss': val_metrics['val_loss'],
+                                'val_action_loss': val_metrics['val_action_loss'],
+                                'val_lm_loss': val_metrics['val_lm_loss'],
                             }, f, indent=2)
 
                         print(f"  >>> New best checkpoint! Val loss: {best_val_loss:.4f}")

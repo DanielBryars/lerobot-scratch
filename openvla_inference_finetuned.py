@@ -37,19 +37,36 @@ def main():
     print()
 
     # Path to your fine-tuned model
-    model_path = "./outputs/openvla_finetuned/final"
+    # Default: Use best_checkpoint (lowest validation loss)
+    model_path = "./outputs/openvla_finetuned/best_checkpoint"
+
+    # Fallback to final if best doesn't exist
+    if not Path(model_path).exists():
+        model_path = "./outputs/openvla_finetuned/final"
 
     if not Path(model_path).exists():
         print(f"ERROR: Fine-tuned model not found at {model_path}")
-        print("Available checkpoints:")
+        print("\nAvailable checkpoints:")
         checkpoint_dir = Path("./outputs/openvla_finetuned")
         if checkpoint_dir.exists():
-            for item in checkpoint_dir.iterdir():
-                if item.is_dir() and item.name.startswith("checkpoint"):
+            for item in sorted(checkpoint_dir.iterdir()):
+                if item.is_dir():
                     print(f"  - {item.name}")
-        print("\nYou can use a checkpoint like:")
+        print("\nRecommendation: Use 'best_checkpoint' to avoid overfitting!")
+        print("You can also use a specific checkpoint like:")
         print("  model_path = './outputs/openvla_finetuned/checkpoint-2500'")
         return 1
+
+    print(f"Loading model from: {model_path}")
+
+    # Show checkpoint info if available
+    checkpoint_info_path = Path(model_path) / "checkpoint_info.json"
+    if checkpoint_info_path.exists():
+        with open(checkpoint_info_path) as f:
+            info = json.load(f)
+        print(f"  Checkpoint step: {info.get('step', 'unknown')}")
+        print(f"  Validation loss: {info.get('val_loss', 'unknown'):.4f}")
+    print()
 
     # Check for CUDA
     if torch.cuda.is_available():
@@ -68,6 +85,7 @@ def main():
     # Import modules
     print("Loading modules...")
     import cv2
+    from PIL import Image
     from lerobot.robots.so100_follower.config_so100_follower import SO100FollowerConfig
     from so100_sts3250 import SO100FollowerSTS3250
 
@@ -88,6 +106,36 @@ def main():
 
     model.eval()
     print("[OK] Fine-tuned model loaded successfully!")
+
+    # Compile model for faster inference (PyTorch 2.0+)
+    print("Compiling model for faster inference...")
+    print("  Note: Actual compilation happens on first inference call")
+    try:
+        model = torch.compile(model, mode="reduce-overhead")
+        print("[OK] Model wrapped with torch.compile")
+    except Exception as e:
+        print(f"[WARNING] Could not compile model: {e}")
+        print("Continuing without compilation...")
+
+    # Warmup: Run a dummy inference to trigger compilation
+    print("\nWarming up model (this triggers compilation)...")
+    dummy_image = Image.new('RGB', (1280, 480), color=(128, 128, 128))
+    dummy_prompt = "In: What action should the robot take to pick up the block?\nOut:"
+    dummy_inputs = processor(dummy_prompt, dummy_image, return_tensors="pt")
+    dummy_inputs = {k: v.to(device) for k, v in dummy_inputs.items()}
+    if "pixel_values" in dummy_inputs:
+        dummy_inputs["pixel_values"] = dummy_inputs["pixel_values"].to(torch.bfloat16)
+
+    warmup_start = time.time()
+    with torch.no_grad():
+        _ = model.predict_action(
+            **dummy_inputs,
+            unnorm_key="bridge_orig",
+            do_sample=False,
+        )
+    warmup_time = time.time() - warmup_start
+    print(f"  Warmup complete: {warmup_time:.1f}s")
+    print()
 
     # Load action normalization statistics
     norm_stats_path = Path(model_path) / "action_norm_stats.json"
@@ -205,10 +253,16 @@ def main():
     input_handler.start()
 
     step = 0
+    total_time = 0
+    inference_times = []
+
     try:
         while not should_quit:
             if running:
+                step_start = time.time()
+
                 # Get images from ALL cameras and combine them (same as training)
+                cam_start = time.time()
                 frames = []
                 for cam_name in cameras.keys():
                     ret, frame = cameras[cam_name].read()
@@ -227,17 +281,20 @@ def main():
                     frame_rgb = np.concatenate(frames, axis=1)
                 else:
                     frame_rgb = frames[0]
+                cam_time = time.time() - cam_start
 
                 # Get current robot state
+                robot_start = time.time()
                 obs = robot.get_observation()
                 state = []
                 for joint in joint_names:
                     key = f"{joint}.pos"
                     if key in obs:
                         state.append(obs[key])
+                robot_time = time.time() - robot_start
 
                 # Prepare input for OpenVLA
-                from PIL import Image
+                prep_start = time.time()
                 pil_image = Image.fromarray(frame_rgb)
 
                 # Format prompt for OpenVLA (same as training)
@@ -249,14 +306,18 @@ def main():
                 # Convert pixel values to bfloat16 to match model dtype
                 if "pixel_values" in inputs:
                     inputs["pixel_values"] = inputs["pixel_values"].to(torch.bfloat16)
+                prep_time = time.time() - prep_start
 
                 # Generate action
+                inference_start = time.time()
                 with torch.no_grad():
                     action = model.predict_action(
                         **inputs,
-                        unnorm_key="bridge_orig",  # Use bridge normalization
+                        unnorm_key="bridge_orig",
                         do_sample=False,
                     )
+                inference_time = time.time() - inference_start
+                inference_times.append(inference_time)
 
                 # OpenVLA outputs 7D action: [x, y, z, roll, pitch, yaw, gripper]
                 # We need to map this to our 6-DOF robot
@@ -271,14 +332,6 @@ def main():
                 denorm_action = (normalized_action + 1.0) / 2.0  # [-1, 1] -> [0, 1]
                 denorm_action = denorm_action * (action_maxs - action_mins) + action_mins  # [0, 1] -> [min, max]
 
-                # DEBUG: Print what the model predicted
-                if step % 10 == 0:
-                    print(f"\nStep {step}:")
-                    print(f"  Current state: {[f'{s:.1f}' for s in state]}")
-                    print(f"  Raw action (normalized): {action[:6]}")
-                    print(f"  Denormalized action: {denorm_action}")
-                    print(f"  Action range: [{action.min():.3f}, {action.max():.3f}]")
-
                 # Map denormalized actions to robot joints
                 action_dict = {}
                 action_dict["shoulder_pan.pos"] = float(denorm_action[0])
@@ -289,10 +342,30 @@ def main():
                 action_dict["gripper.pos"] = float(denorm_action[5])
 
                 # Send to robot
+                send_start = time.time()
                 robot.send_action(action_dict)
+                send_time = time.time() - send_start
+
+                step_total = time.time() - step_start
+
+                # DEBUG: Print what the model predicted
+                if step % 10 == 0:
+                    avg_inference = np.mean(inference_times[-10:]) if len(inference_times) >= 10 else np.mean(inference_times)
+                    print(f"\nStep {step}:")
+                    print(f"  Current state: {[f'{s:.1f}' for s in state]}")
+                    print(f"  Raw action (normalized): {action[:6]}")
+                    print(f"  Denormalized action: {denorm_action}")
+                    print(f"  Action range: [{action.min():.3f}, {action.max():.3f}]")
+                    print(f"  Timing: cam={cam_time*1000:.1f}ms, prep={prep_time*1000:.1f}ms, inference={inference_time*1000:.1f}ms (avg={avg_inference*1000:.1f}ms), send={send_time*1000:.1f}ms, total={step_total*1000:.1f}ms")
+                    print(f"  Control frequency: {1.0/step_total:.1f} Hz")
 
                 step += 1
-                time.sleep(0.1)  # ~10Hz for VLA models
+
+                # Adaptive sleep to maintain ~10Hz
+                target_dt = 0.1
+                elapsed = time.time() - step_start
+                if elapsed < target_dt:
+                    time.sleep(target_dt - elapsed)
             else:
                 time.sleep(0.1)
 

@@ -1,26 +1,15 @@
 #!/usr/bin/env python3
 """
-OpenVLA Fine-tuning Script for LeRobot Datasets (Official Approach).
+OpenVLA Fine-tuning Script for LeRobot Datasets.
 
 Fine-tunes the OpenVLA-7B model on local LeRobot datasets using LoRA
 for parameter-efficient training.
-
-This version uses the official OpenVLA loss computation approach:
-- Uses model's built-in unified loss (output.loss)
-- Cross-entropy on all tokens including action tokens
-- No manual loss combination or weighting
-
-For the old custom loss approach, see: openvla_finetune_customloss.py
 
 Usage:
     python openvla_finetune.py
 
 Requirements:
     pip install transformers accelerate peft bitsandbytes wandb
-
-References:
-    - https://github.com/openvla/openvla
-    - https://arxiv.org/html/2406.09246v3
 """
 
 import os
@@ -73,11 +62,7 @@ class FinetuneConfig:
     # Logging
     log_freq: int = 10
     save_freq: int = 500
-    eval_freq: int = 100  # Evaluate more frequently to catch overfitting
-
-    # Validation
-    val_split: float = 0.1  # 10% validation split
-    val_seed: int = 42  # Random seed for reproducible splits
+    eval_freq: int = 500
 
     # Weights & Biases
     wandb_project: str = "openvla-so100"
@@ -473,13 +458,6 @@ def compute_action_loss(logits, action_tokens, action_dim=6):
     """
     Compute cross-entropy loss for action prediction.
 
-    NOTE: This function is NOT used in the official OpenVLA training approach.
-    The official method uses a unified loss from the model itself (output.loss),
-    which internally computes cross-entropy on all tokens including actions.
-
-    This custom implementation is kept for reference only.
-    See openvla_finetune_customloss.py for the old manual loss combination approach.
-
     OpenVLA predicts actions as discrete tokens, so we use CE loss.
     """
     # Get the action prediction logits (last action_dim tokens)
@@ -763,7 +741,7 @@ def main():
 
     # Load dataset
     print("Loading dataset...")
-    full_dataset = LeRobotOpenVLADataset(
+    dataset = LeRobotOpenVLADataset(
         dataset_root=cfg.dataset_root,
         processor=processor,
         action_tokenizer=action_tokenizer,
@@ -771,27 +749,8 @@ def main():
         image_layout="horizontal",  # Both cameras side-by-side
     )
 
-    # Split into train/val
-    total_size = len(full_dataset)
-    val_size = int(total_size * cfg.val_split)
-    train_size = total_size - val_size
-
-    print(f"  Total samples: {total_size}")
-    print(f"  Train samples: {train_size} ({100 * train_size / total_size:.1f}%)")
-    print(f"  Val samples: {val_size} ({100 * val_size / total_size:.1f}%)")
-
-    # Use random_split with seed for reproducibility
-    from torch.utils.data import random_split
-    generator = torch.Generator().manual_seed(cfg.val_seed)
-    train_dataset, val_dataset = random_split(
-        full_dataset,
-        [train_size, val_size],
-        generator=generator
-    )
-
-    # Create dataloaders
-    train_dataloader = DataLoader(
-        train_dataset,
+    dataloader = DataLoader(
+        dataset,
         batch_size=cfg.batch_size,
         shuffle=True,
         num_workers=4,  # Parallel data loading
@@ -799,16 +758,6 @@ def main():
         pin_memory=True,
         persistent_workers=True,
         prefetch_factor=2,
-    )
-
-    val_dataloader = DataLoader(
-        val_dataset,
-        batch_size=cfg.batch_size,
-        shuffle=False,  # Don't shuffle validation
-        num_workers=2,
-        collate_fn=collate_fn,
-        pin_memory=True,
-        persistent_workers=True,
     )
     print()
 
@@ -827,64 +776,24 @@ def main():
         eta_min=cfg.learning_rate * 0.1,
     )
 
-    # Validation function
-    def evaluate_on_validation():
-        """Evaluate model on validation set."""
-        model.eval()
-        val_losses = []
-
-        with torch.no_grad():
-            for batch in tqdm(val_dataloader, desc="  Validation", leave=False):
-                # Move to device
-                input_ids = batch['input_ids'].to(device)
-                attention_mask = batch['attention_mask'].to(device)
-                pixel_values = batch['pixel_values'].to(device, dtype=torch.bfloat16)
-                action_tokens = batch['action_tokens'].to(device)
-
-                # Forward pass
-                with torch.autocast("cuda", dtype=torch.bfloat16):
-                    outputs = model(
-                        input_ids=input_ids,
-                        attention_mask=attention_mask,
-                        pixel_values=pixel_values,
-                        labels=input_ids,
-                    )
-
-                    # Use unified loss (official OpenVLA approach)
-                    loss = outputs.loss
-
-                val_losses.append(loss.item())
-
-        model.train()
-
-        return {
-            'val_loss': np.mean(val_losses),
-        }
-
     # Training loop
     print("=" * 70)
     print("Starting training...")
     print(f"  Batch size: {cfg.batch_size} x {cfg.grad_accumulation_steps} = {cfg.batch_size * cfg.grad_accumulation_steps}")
     print(f"  Learning rate: {cfg.learning_rate}")
     print(f"  Max steps: {cfg.max_steps}")
-    print(f"  Validation every: {cfg.eval_freq} steps")
     print("=" * 70)
     print()
 
     model.train()
     global_step = 0
     total_loss = 0
-    avg_loss = 0.0  # Initialize for display
     optimizer.zero_grad()
-
-    # Track best validation loss
-    best_val_loss = float('inf')
-    best_checkpoint_step = 0
 
     pbar = tqdm(total=cfg.max_steps, desc="Training")
 
     while global_step < cfg.max_steps:
-        for batch_idx, batch in enumerate(train_dataloader):
+        for batch_idx, batch in enumerate(dataloader):
             # Move to device
             input_ids = batch['input_ids'].to(device)
             attention_mask = batch['attention_mask'].to(device)
@@ -897,13 +806,21 @@ def main():
                     input_ids=input_ids,
                     attention_mask=attention_mask,
                     pixel_values=pixel_values,
-                    labels=input_ids,  # Causal LM loss on all tokens including actions
+                    labels=input_ids,  # For language modeling loss
                 )
 
-                # Use model's built-in unified loss (official OpenVLA approach)
-                # The model internally computes cross-entropy on all tokens,
-                # including the action tokens that were tokenized as part of the sequence
-                loss = outputs.loss
+                # Combine LM loss with action prediction loss
+                lm_loss = outputs.loss
+
+                # Simple action loss based on final hidden states
+                # This is a simplified version - full OpenVLA uses action tokens
+                action_loss = compute_action_loss(
+                    outputs.logits,
+                    action_tokens,
+                    action_dim=6,
+                )
+
+                loss = lm_loss + 0.1 * action_loss
 
             # Backward pass
             normalized_loss = loss / cfg.grad_accumulation_steps
@@ -941,67 +858,14 @@ def main():
 
                     if cfg.use_wandb:
                         wandb.log({
-                            'train_loss': avg_loss,
+                            'loss': avg_loss,
                             'learning_rate': lr,
                             'step': global_step,
                         })
 
                     total_loss = 0
 
-                # Validation evaluation
-                if global_step % cfg.eval_freq == 0:
-                    print("\n  Running validation...")
-                    val_metrics = evaluate_on_validation()
-
-                    pbar.set_postfix({
-                        'train_loss': f'{avg_loss:.4f}',
-                        'val_loss': f'{val_metrics["val_loss"]:.4f}',
-                        'lr': f'{lr:.2e}',
-                    })
-
-                    print(f"  Step {global_step}:")
-                    print(f"    Train loss: {avg_loss:.4f}")
-                    print(f"    Val loss: {val_metrics['val_loss']:.4f}")
-
-                    if cfg.use_wandb:
-                        wandb.log({
-                            'val_loss': val_metrics['val_loss'],
-                            'step': global_step,
-                        })
-
-                    # Save best checkpoint
-                    if val_metrics['val_loss'] < best_val_loss:
-                        best_val_loss = val_metrics['val_loss']
-                        best_checkpoint_step = global_step
-
-                        best_path = Path(cfg.output_dir) / "best_checkpoint"
-                        os.makedirs(best_path, exist_ok=True)
-
-                        if cfg.use_lora:
-                            model.save_pretrained(best_path)
-                        else:
-                            model.save_pretrained(best_path)
-
-                        processor.save_pretrained(best_path)
-
-                        # Save normalization stats with best checkpoint too
-                        norm_stats = {
-                            'action_mins': full_dataset.action_mins.tolist(),
-                            'action_maxs': full_dataset.action_maxs.tolist(),
-                        }
-                        with open(best_path / "action_norm_stats.json", 'w') as f:
-                            json.dump(norm_stats, f, indent=2)
-
-                        # Save info about best checkpoint
-                        with open(best_path / "checkpoint_info.json", 'w') as f:
-                            json.dump({
-                                'step': global_step,
-                                'val_loss': val_metrics['val_loss'],
-                            }, f, indent=2)
-
-                        print(f"  >>> New best checkpoint! Val loss: {best_val_loss:.4f}")
-
-                # Save regular checkpoint
+                # Save checkpoint
                 if global_step % cfg.save_freq == 0:
                     save_path = Path(cfg.output_dir) / f"checkpoint-{global_step}"
                     os.makedirs(save_path, exist_ok=True)
@@ -1038,8 +902,8 @@ def main():
 
     # Save normalization statistics
     norm_stats = {
-        'action_mins': full_dataset.action_mins.tolist(),
-        'action_maxs': full_dataset.action_maxs.tolist(),
+        'action_mins': dataset.action_mins.tolist(),
+        'action_maxs': dataset.action_maxs.tolist(),
     }
     with open(final_path / "action_norm_stats.json", 'w') as f:
         json.dump(norm_stats, f, indent=2)
@@ -1050,18 +914,6 @@ def main():
         json.dump(vars(cfg), f, indent=2)
 
     print(f"\nTraining complete! Model saved to {final_path}")
-
-    # Print summary
-    print("\n" + "=" * 70)
-    print("Training Summary")
-    print("=" * 70)
-    print(f"Best validation loss: {best_val_loss:.4f}")
-    print(f"Best checkpoint step: {best_checkpoint_step}")
-    print(f"Best checkpoint saved to: {Path(cfg.output_dir) / 'best_checkpoint'}")
-    print(f"Final checkpoint saved to: {final_path}")
-    print()
-    print("Recommended: Use the 'best_checkpoint' for inference to avoid overfitting!")
-    print("=" * 70)
 
     if cfg.use_wandb:
         wandb.finish()

@@ -1,0 +1,40 @@
+{
+  "os": "Windows-11-10.0.26200-SP0",
+  "python": "CPython 3.13.2",
+  "startedAt": "2025-11-24T18:34:06.955359Z",
+  "program": "D:\\git\\lerobot-scratch\\openvla_finetune.py",
+  "codePath": "openvla_finetune.py",
+  "codePathLocal": "openvla_finetune.py",
+  "git": {
+    "remote": "git@github.com:DanielBryars/lerobot-scratch.git",
+    "commit": "1af35318f682b6c9bb3c2eff0b855b14a15e777c"
+  },
+  "email": "bryars@hotmail.com",
+  "root": "D:\\git\\lerobot-scratch",
+  "host": "SHED",
+  "executable": "D:\\git\\lerobot-scratch\\venv\\Scripts\\python.exe",
+  "cpu_count": 16,
+  "cpu_count_logical": 32,
+  "gpu": "NVIDIA GeForce RTX 5090",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "1000186310656",
+      "used": "902705025024"
+    }
+  },
+  "memory": {
+    "total": "68318273536"
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA GeForce RTX 5090",
+      "memoryTotal": "34190917632",
+      "cudaCores": 21760,
+      "architecture": "Blackwell",
+      "uuid": "GPU-a7a207c3-0758-e34f-cc75-1ea3e42f9e0f"
+    }
+  ],
+  "cudaVersion": "12.9",
+  "writerId": "5q6vh7xy7wgqizya2va5rdybmg7uvcja"
+}
