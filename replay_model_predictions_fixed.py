@@ -206,8 +206,9 @@ def main():
                     do_sample=False,
                 )
 
-        # Extract last 6 tokens (action tokens)
-        generated_ids = output_ids[0, -6:].cpu().numpy()
+        # Extract 6 action tokens BEFORE the EOS token
+        # Model outputs: [action1, ..., action6, EOS] so we need -7:-1
+        generated_ids = output_ids[0, -7:-1].cpu().numpy()
 
         # Decode to continuous normalized actions [-1, 1]
         normalized_action = action_tokenizer.decode_token_ids_to_actions(generated_ids)

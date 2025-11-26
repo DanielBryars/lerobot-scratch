@@ -147,6 +147,12 @@ def main():
     robot = SO100FollowerSTS3250(follower_config)
     robot.connect()
     print("[OK] Robot connected")
+
+    # Save starting position for graceful exit
+    joint_names = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"]
+    start_obs = robot.get_observation()
+    start_position = np.array([start_obs[f"{name}.pos"] for name in joint_names])
+    print(f"Starting position saved: {[f'{v:.0f}' for v in start_position]}")
     print()
 
     # Open cameras
@@ -177,17 +183,68 @@ def main():
 
     print("=" * 70)
     print("Ready to run! Press ENTER to start inference loop...")
-    print("(Ctrl+C to stop)")
+    print("Press 'q' to stop gracefully (returns robot to start position)")
     print("=" * 70)
     input()
 
-    joint_names = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"]
+    # Smoothing parameters - exponential moving average
+    # Lower alpha = smoother but more lag (0.3 = 30% new prediction, 70% previous)
+    SMOOTHING_ALPHA = 0.2  # Reduced from 0.3 for smoother motion
+    smoothed_action = None
+    current_action = start_position.copy()  # Track current position for graceful exit
+
+    # Velocity limiting - max degrees per step for each joint
+    # This prevents sudden large movements even if model predicts them
+    MAX_VELOCITY = np.array([
+        15.0,  # shoulder_pan
+        15.0,  # shoulder_lift
+        15.0,  # elbow_flex
+        20.0,  # wrist_flex
+        20.0,  # wrist_roll
+        30.0,  # gripper (can move faster)
+    ])
+
+    print(f"Using action smoothing (alpha={SMOOTHING_ALPHA})")
+    print(f"Max velocity per step: {MAX_VELOCITY[0]:.0f}° for arm joints")
+    print()
+
+    # For non-blocking keyboard input on Windows
+    import msvcrt
+
+    def check_for_quit():
+        """Check if 'q' was pressed (non-blocking)."""
+        if msvcrt.kbhit():
+            key = msvcrt.getch().decode('utf-8', errors='ignore').lower()
+            return key == 'q'
+        return False
+
+    def return_to_start(current_pos, target_pos, steps=50, delay=0.05):
+        """Smoothly interpolate from current position back to start."""
+        print("\nReturning to start position...")
+        for i in range(steps + 1):
+            t = i / steps  # 0 to 1
+            # Smooth easing (ease-in-out)
+            t = t * t * (3 - 2 * t)
+            interp_pos = current_pos + t * (target_pos - current_pos)
+            action_dict = {f"{name}.pos": float(val) for name, val in zip(joint_names, interp_pos)}
+            robot.send_action(action_dict)
+            time.sleep(delay)
+            if i % 10 == 0:
+                print(f"  {int(t*100)}%...")
+        print("  Done!")
 
     try:
         step = 0
-        while True:
+        running = True
+        while running:
             step += 1
             start_time = time.time()
+
+            # Check for quit key
+            if check_for_quit():
+                print("\n'q' pressed - stopping gracefully...")
+                running = False
+                break
 
             # Capture frames from all cameras
             frames = []
@@ -218,8 +275,10 @@ def main():
                         do_sample=False,
                     )
 
-            # Extract action tokens (last 6 generated tokens)
-            generated_ids = output_ids[0, -6:].cpu().numpy()
+            # Extract action tokens (6 tokens BEFORE the EOS token)
+            # The model outputs: [action1, action2, action3, action4, action5, action6, EOS]
+            # We need tokens -7:-1 (excludes EOS at position -1)
+            generated_ids = output_ids[0, -7:-1].cpu().numpy()
 
             # Decode to continuous normalized actions
             normalized_action = action_tokenizer.decode_token_ids_to_actions(generated_ids)
@@ -227,24 +286,44 @@ def main():
             # Denormalize using q01/q99
             denorm_action = (normalized_action + 1.0) / 2.0 * (action_q99 - action_q01) + action_q01
 
+            # Apply exponential moving average smoothing to reduce jitter
+            if smoothed_action is None:
+                smoothed_action = current_action.copy()  # Start from current robot position, not model prediction
+            else:
+                smoothed_action = SMOOTHING_ALPHA * denorm_action + (1 - SMOOTHING_ALPHA) * smoothed_action
+
+            # Apply velocity limiting - clamp changes to max velocity per step
+            delta = smoothed_action - current_action
+            delta = np.clip(delta, -MAX_VELOCITY, MAX_VELOCITY)
+            smoothed_action = current_action + delta
+
+            # Track current position for graceful exit
+            current_action = smoothed_action.copy()
+
             inference_time = time.time() - start_time
 
-            # Send action to robot (keys must end with .pos)
-            action_dict = {f"{name}.pos": float(val) for name, val in zip(joint_names, denorm_action)}
+            # Send SMOOTHED action to robot (keys must end with .pos)
+            action_dict = {f"{name}.pos": float(val) for name, val in zip(joint_names, smoothed_action)}
             robot.send_action(action_dict)
 
             # Print results
             print(f"Step {step} ({inference_time*1000:.0f}ms): ", end="")
-            print(" | ".join([f"{name[:3]}:{val:.0f}" for name, val in zip(joint_names, denorm_action)]))
+            print(" | ".join([f"{name[:3]}:{val:.0f}" for name, val in zip(joint_names, smoothed_action)]))
 
     except KeyboardInterrupt:
-        print("\n\nStopping...")
+        print("\n\nCtrl+C - stopping...")
 
-    finally:
-        print("Disconnecting robot...")
-        robot.disconnect()
-        for cap in caps.values():
-            cap.release()
+    # Graceful exit: return to start position
+    try:
+        return_to_start(current_action, start_position, steps=50, delay=0.05)
+    except Exception as e:
+        print(f"Error returning to start: {e}")
+
+    # Clean up
+    print("Disconnecting robot...")
+    robot.disconnect()
+    for cap in caps.values():
+        cap.release()
 
     print("Done!")
     return 0
