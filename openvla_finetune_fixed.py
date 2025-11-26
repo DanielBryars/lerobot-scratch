@@ -130,8 +130,8 @@ class FinetuneConfig:
     output_dir: str = "./outputs/openvla_fixed"
 
     # Training hyperparameters
-    batch_size: int = 12  # Match official: 12 for 48GB GPU
-    grad_accumulation_steps: int = 2  # Effective batch size = 24
+    batch_size: int = 8  # Reduced for 32GB GPU with quantization
+    grad_accumulation_steps: int = 4  # Effective batch size = 32
     learning_rate: float = 5e-4  # Official default
     max_steps: int = 2500
     warmup_steps: int = 50
@@ -141,7 +141,7 @@ class FinetuneConfig:
     lora_rank: int = 32
     lora_alpha: int = 16  # Official uses min(rank, 16)
     lora_dropout: float = 0.0
-    use_quantization: bool = False  # DISABLED - official warns it hurts performance
+    use_quantization: bool = True  # 4-bit quantization for 32GB GPU (required to fit in VRAM)
 
     # Logging
     log_freq: int = 10
@@ -455,6 +455,143 @@ def collate_fn(batch):
     }
 
 
+def validate_cameras(cfg: FinetuneConfig) -> bool:
+    """
+    Validate camera configuration by capturing and displaying test frames.
+    Returns True if user confirms cameras are correct.
+    """
+    import cv2
+    import subprocess
+
+    print("=" * 70)
+    print("Camera Validation")
+    print("=" * 70)
+    print()
+
+    # Load robot config
+    with open(cfg.robot_config_path) as f:
+        robot_config = json.load(f)
+
+    cameras_config = robot_config.get("cameras", {})
+    if not cameras_config:
+        print("ERROR: No cameras found in config.json!")
+        return False
+
+    print(f"Found {len(cameras_config)} camera(s) in config:")
+    for cam_name, cam_cfg in cameras_config.items():
+        print(f"  - {cam_name}: index={cam_cfg['index_or_path']}, {cam_cfg['width']}x{cam_cfg['height']}@{cam_cfg['fps']}fps")
+    print()
+
+    # Capture test frames from each camera
+    test_frames = {}
+    captures = {}
+
+    for cam_name, cam_cfg in cameras_config.items():
+        print(f"Capturing from {cam_name} (index {cam_cfg['index_or_path']})...")
+
+        cap = cv2.VideoCapture(cam_cfg["index_or_path"])
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, cam_cfg["width"])
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, cam_cfg["height"])
+        cap.set(cv2.CAP_PROP_FPS, cam_cfg["fps"])
+
+        if not cap.isOpened():
+            print(f"  [ERROR] Failed to open camera {cam_cfg['index_or_path']}")
+            continue
+
+        # Capture a few frames to let camera warm up
+        for _ in range(5):
+            cap.read()
+
+        ret, frame = cap.read()
+        if ret:
+            test_frames[cam_name] = frame
+            print(f"  [OK] Captured {frame.shape[1]}x{frame.shape[0]} frame")
+        else:
+            print(f"  [ERROR] Failed to capture frame")
+
+        captures[cam_name] = cap
+
+    if not test_frames:
+        print("\nERROR: Could not capture from any camera!")
+        for cap in captures.values():
+            cap.release()
+        return False
+
+    # Save test frames for user review
+    output_dir = Path(cfg.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    print()
+    print("Saving test frames for validation:")
+
+    saved_paths = []
+    for cam_name, frame in test_frames.items():
+        filename = f"camera_validation_{cam_name}.jpg"
+        filepath = output_dir / filename
+        cv2.imwrite(str(filepath), frame)
+        print(f"  Saved: {filepath}")
+        saved_paths.append(filepath)
+
+    # Also save combined view (as it will appear during training)
+    if len(test_frames) > 1:
+        frames_list = list(test_frames.values())
+        combined = np.concatenate(frames_list, axis=1)
+        combined_path = output_dir / "camera_validation_combined.jpg"
+        cv2.imwrite(str(combined_path), combined)
+        print(f"  Saved combined view: {combined_path}")
+        saved_paths.append(combined_path)
+
+    # Release cameras
+    for cap in captures.values():
+        cap.release()
+
+    # Display frames using system default viewer
+    print()
+    print("=" * 70)
+    print("Please review the camera images:")
+    print()
+
+    # Open images with system default viewer
+    combined_image_path = None
+    if len(test_frames) > 1:
+        combined_image_path = output_dir / "camera_validation_combined.jpg"
+
+    try:
+        if sys.platform == "win32":
+            image_to_show = combined_image_path if combined_image_path else saved_paths[0]
+            subprocess.Popen(["start", "", str(image_to_show)], shell=True)
+            print(f"Opened: {image_to_show}")
+        else:
+            image_to_show = combined_image_path if combined_image_path else saved_paths[0]
+            opener = "xdg-open" if sys.platform == "linux" else "open"
+            subprocess.Popen([opener, str(image_to_show)])
+            print(f"Opened: {image_to_show}")
+    except Exception as e:
+        print(f"Could not auto-open image: {e}")
+        print("Please manually open the images:")
+        for path in saved_paths:
+            print(f"  {path}")
+
+    print()
+    print("The COMBINED view shows what the model will see during training.")
+    print("(Left: base camera, Right: wrist camera)")
+    print("=" * 70)
+    print()
+
+    # Ask user for confirmation (default to yes)
+    while True:
+        response = input("Are the cameras configured correctly? [Y/n]: ").strip().lower()
+        if response in ['', 'y', 'yes']:
+            print()
+            return True
+        elif response in ['n', 'no']:
+            print()
+            print("Please update config.json with the correct camera settings and try again.")
+            return False
+        else:
+            print("Please enter 'y' for yes or 'n' for no (or just press Enter for yes).")
+
+
 def main():
     cfg = FinetuneConfig()
 
@@ -463,11 +600,16 @@ def main():
     print("=" * 70)
     print()
     print("Key Fixes:")
-    print("  ✓ Action tokens included in input sequence")
-    print("  ✓ Labels properly masked (loss only on actions)")
-    print("  ✓ q01/q99 normalization (not min/max)")
-    print("  ✓ Quantization disabled")
+    print("  - Action tokens included in input sequence")
+    print("  - Labels properly masked (loss only on actions)")
+    print("  - q01/q99 normalization (not min/max)")
+    print("  - 4-bit quantization (fits in 32GB VRAM)")
     print()
+
+    # Validate cameras first
+    if not validate_cameras(cfg):
+        print("Camera validation failed. Exiting.")
+        return 1
 
     # Check device
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -481,10 +623,10 @@ def main():
     from transformers import AutoModelForVision2Seq, AutoProcessor, BitsAndBytesConfig
     from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 
-    # No quantization (official warns it hurts performance)
+    # 4-bit quantization (required to fit in 32GB VRAM)
     quantization_config = None
     if cfg.use_quantization:
-        print("  WARNING: Quantization enabled - may hurt performance!")
+        print("  Using 4-bit quantization (NF4) to fit in VRAM")
         quantization_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_compute_dtype=torch.bfloat16,
