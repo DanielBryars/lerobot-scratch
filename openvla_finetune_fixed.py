@@ -127,13 +127,13 @@ class FinetuneConfig:
     robot_config_path: str = "./config.json"
 
     # Output
-    output_dir: str = "./outputs/openvla_fixed"
+    output_dir: str = "./outputs/openvla_fixed_5k"  # New directory for 5000-step run
 
     # Training hyperparameters
     batch_size: int = 8  # Reduced for 32GB GPU with quantization
     grad_accumulation_steps: int = 4  # Effective batch size = 32
     learning_rate: float = 5e-4  # Official default
-    max_steps: int = 2500
+    max_steps: int = 5000  # Extended overnight run
     warmup_steps: int = 50
 
     # LoRA settings
@@ -145,7 +145,7 @@ class FinetuneConfig:
 
     # Logging
     log_freq: int = 10
-    save_freq: int = 500
+    save_freq: int = 1000  # Save every 1000 steps for longer run
     eval_freq: int = 100
 
     # Validation

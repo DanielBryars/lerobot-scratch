@@ -60,7 +60,8 @@ class ActionTokenizer:
 
 def main():
     # Configuration
-    model_path = "./outputs/openvla_fixed/best_checkpoint"
+    # model_path = "./outputs/openvla_fixed/best_checkpoint"  # 2500-step model
+    model_path = "./outputs/openvla_fixed_5k/best_checkpoint"  # 5000-step model (overnight run)
     robot_config_path = "./config.json"
     dataset_path = "./datasets/20251124_233735_5hz"  # To get exact task description
 
