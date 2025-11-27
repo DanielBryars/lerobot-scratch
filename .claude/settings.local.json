@@ -19,7 +19,8 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(D:/git/lerobot-scratch/venv/Scripts/python.exe:*)",
       "Bash(D:/git/lerobot-scratch/venv/Scripts/pip.exe show:*)",
-      "Bash(D:/git/lerobot-scratch/venv/Scripts/pip.exe install:*)"
+      "Bash(D:/git/lerobot-scratch/venv/Scripts/pip.exe install:*)",
+      "Bash(findstr:*)"
     ],
     "deny": [],
     "ask": []
