@@ -7,6 +7,7 @@ Adapted from LeRobot examples for our SO-100 block moving task.
 
 from pathlib import Path
 import torch
+import torch.nn.functional as F
 import time
 from tqdm import tqdm
 import wandb
@@ -22,9 +23,12 @@ from lerobot.configs.types import FeatureType
 class CachedDataset(torch.utils.data.Dataset):
     """Wrapper that pre-caches all dataset samples in memory for fast access."""
 
-    def __init__(self, dataset, device=None):
+    def __init__(self, dataset, device=None, resize_images_to=None):
         self.device = device
+        self.resize_to = resize_images_to
         print(f"\nPre-caching {len(dataset)} samples to memory...")
+        if resize_images_to:
+            print(f"  Resizing images to {resize_images_to}x{resize_images_to}")
 
         # Pre-load all samples
         self.samples = []
@@ -34,6 +38,16 @@ class CachedDataset(torch.utils.data.Dataset):
             cached_sample = {}
             for k, v in sample.items():
                 if isinstance(v, torch.Tensor):
+                    # Resize images if requested
+                    if resize_images_to and "images" in k and v.dim() >= 3:
+                        # v shape could be [n_obs_steps, C, H, W] or [C, H, W]
+                        if v.dim() == 4:  # [n_obs_steps, C, H, W]
+                            v = F.interpolate(v, size=(resize_images_to, resize_images_to),
+                                            mode='bilinear', align_corners=False)
+                        elif v.dim() == 3:  # [C, H, W]
+                            v = F.interpolate(v.unsqueeze(0), size=(resize_images_to, resize_images_to),
+                                            mode='bilinear', align_corners=False).squeeze(0)
+
                     if device is not None:
                         cached_sample[k] = v.to(device)
                     else:
@@ -61,17 +75,32 @@ class CachedDataset(torch.utils.data.Dataset):
 
 
 def main():
-    # Configuration
-    dataset_path = Path("datasets/20251124_233735_5hz")
-    output_directory = Path("outputs/diffusion_so100")
+    import argparse
+    parser = argparse.ArgumentParser(description="Train Diffusion Policy")
+    parser.add_argument("--dataset", type=str, default="datasets/20251124_233735_5hz",
+                       help="Path to dataset folder")
+    parser.add_argument("--output", type=str, default="outputs/diffusion_so100",
+                       help="Output directory for checkpoints")
+    parser.add_argument("--steps", type=int, default=50000,
+                       help="Number of training steps")
+    parser.add_argument("--batch-size", type=int, default=64,
+                       help="Batch size")
+    parser.add_argument("--image-size", type=int, default=224,
+                       help="Image size (images resized to this)")
+    args = parser.parse_args()
+
+    # Configuration from args
+    dataset_path = Path(args.dataset)
+    output_directory = Path(args.output)
     output_directory.mkdir(parents=True, exist_ok=True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # Training hyperparameters
-    training_steps = 50000  # More steps for better convergence
-    batch_size = 64  # RTX 5090 has 32GB VRAM
+    # Training hyperparameters (from args)
+    training_steps = args.steps
+    batch_size = args.batch_size
+    image_size = args.image_size
     learning_rate = 1e-4
     log_freq = 100
     save_freq = 10000
@@ -79,7 +108,7 @@ def main():
 
     # WandB configuration
     wandb_project = "diffusion-so100"
-    wandb_run_name = "diffusion_block_move"
+    wandb_run_name = f"diffusion_{image_size}x{image_size}"
 
     # Load dataset metadata
     print(f"\nLoading dataset from: {dataset_path}")
@@ -106,15 +135,15 @@ def main():
     print(f"\nInput features: {list(input_features.keys())}")
     print(f"Output features: {list(output_features.keys())}")
 
-    # Configure diffusion policy
+    # Configure diffusion policy (image_size from args, default 224)
     cfg = DiffusionConfig(
         input_features=input_features,
         output_features=output_features,
         # Vision backbone
         vision_backbone="resnet18",
         pretrained_backbone_weights="ResNet18_Weights.IMAGENET1K_V1",
-        crop_shape=(84, 84),  # Crop from 480x640 to 84x84
-        crop_is_random=True,
+        crop_shape=(image_size, image_size),  # Match resized image size (no additional cropping)
+        crop_is_random=False,  # No random cropping - we resize the full image instead
         use_group_norm=False,  # Can't use group_norm with pretrained weights
         spatial_softmax_num_keypoints=32,
         use_separate_rgb_encoder_per_camera=False,
@@ -188,7 +217,8 @@ def main():
 
     # Pre-cache entire dataset to CPU memory for fast training
     # This eliminates video decoding bottleneck during training
-    dataset = CachedDataset(raw_dataset, device=None)  # Cache to CPU, move to GPU in training loop
+    # Also resize images to image_size x image_size to capture entire scene
+    dataset = CachedDataset(raw_dataset, device=None, resize_images_to=image_size)
 
     # Show a sample
     sample = dataset[0]
