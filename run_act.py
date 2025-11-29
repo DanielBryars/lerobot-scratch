@@ -35,6 +35,8 @@ def main():
                        help="Image size (must match training)")
     parser.add_argument("--dry-run", action="store_true",
                        help="Run without robot (just cameras)")
+    parser.add_argument("--no-display", action="store_true",
+                       help="Run without GUI display")
     args = parser.parse_args()
 
     checkpoint_path = Path(args.checkpoint)
@@ -97,9 +99,6 @@ def main():
     frame_duration = 1.0 / args.fps
     print(f"\nControl frequency: {args.fps} Hz ({frame_duration:.3f}s per step)")
 
-    # Action buffer for temporal ensemble
-    action_queue = []
-
     try:
         for episode in range(args.episodes):
             print(f"\n{'='*60}")
@@ -107,8 +106,8 @@ def main():
             print(f"{'='*60}")
             input("Press Enter to start episode...")
 
-            # Reset action queue at start of episode
-            action_queue = []
+            # Reset policy's internal action queue at start of episode
+            policy.reset()
 
             for step in range(args.max_steps):
                 step_start = time.time()
@@ -153,42 +152,40 @@ def main():
                 # Move to device
                 obs = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in obs.items()}
 
-                # Check if we need new actions
-                if len(action_queue) == 0:
-                    # Get action chunk from policy
-                    with torch.no_grad():
-                        action_chunk = policy.select_action(obs)  # [chunk_size, action_dim]
+                # Get action from policy (handles chunking internally)
+                with torch.no_grad():
+                    action = policy.select_action(obs)  # [action_dim] - single action
 
-                    # Apply postprocessor to unnormalize
-                    action_dict = {"action": action_chunk.unsqueeze(0)}  # [1, chunk_size, action_dim]
-                    action_dict = postprocessor(action_dict)
-                    action_chunk = action_dict["action"].squeeze(0)  # [chunk_size, action_dim]
+                # Apply postprocessor to unnormalize (expects tensor, returns tensor)
+                action = postprocessor(action)
 
-                    # Add all actions to queue
-                    action_queue = list(action_chunk.cpu().numpy())
-
-                # Get next action from queue
-                action = action_queue.pop(0)
+                # Convert to numpy
+                action = action.cpu().numpy()
 
                 # Execute action on robot
                 if robot is not None:
                     robot.send_action({"action": action})
 
-                # Display
-                display = np.hstack([base_frame, wrist_frame])
-                cv2.putText(display, f"Episode {episode+1} Step {step}", (10, 30),
-                           cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                cv2.putText(display, f"Action queue: {len(action_queue)}", (10, 60),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
-                cv2.imshow("ACT Policy", display)
+                # Display (optional)
+                if not args.no_display:
+                    display = np.hstack([base_frame, wrist_frame])
+                    cv2.putText(display, f"Episode {episode+1} Step {step}", (10, 30),
+                               cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                    cv2.putText(display, f"Action: {action[:3]}...", (10, 60),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+                    cv2.imshow("ACT Policy", display)
 
-                key = cv2.waitKey(1)
-                if key == ord('q'):
-                    print("\nQuitting...")
-                    return
-                if key == ord('n'):
-                    print("\nSkipping to next episode...")
-                    break
+                    key = cv2.waitKey(1)
+                    if key == ord('q'):
+                        print("\nQuitting...")
+                        return
+                    if key == ord('n'):
+                        print("\nSkipping to next episode...")
+                        break
+                else:
+                    # Print progress without GUI
+                    if step % 10 == 0:
+                        print(f"  Step {step}, action: {action[:3]}...")
 
                 # Maintain control frequency
                 elapsed = time.time() - step_start
@@ -204,10 +201,11 @@ def main():
         # Cleanup
         base_cam.release()
         wrist_cam.release()
-        try:
-            cv2.destroyAllWindows()
-        except cv2.error:
-            pass  # GUI not available
+        if not args.no_display:
+            try:
+                cv2.destroyAllWindows()
+            except cv2.error:
+                pass  # GUI not available
         if robot is not None:
             robot.disconnect()
         print("\nDone!")

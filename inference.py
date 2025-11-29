@@ -5,7 +5,7 @@ from lerobot.policies.factory import make_pre_post_processors
 from lerobot.policies.pi0.modeling_pi0 import PI0Policy
 from lerobot.policies.utils import build_inference_frame, make_robot_action
 from lerobot.robots.so100_follower.config_so100_follower import SO100FollowerConfig
-from so100_sts3250 import SO100FollowerSTS3250  # Custom class for STS3250 motors
+from SO100FollowerSTS3250 import SO100FollowerSTS3250  # Custom class for STS3250 motors
 
 MAX_EPISODES = 5
 MAX_STEPS_PER_EPISODE = 20

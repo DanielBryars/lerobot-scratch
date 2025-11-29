@@ -60,7 +60,7 @@ def main():
     print("Loading modules...")
     import cv2
     from lerobot.robots.so100_follower.config_so100_follower import SO100FollowerConfig
-    from so100_sts3250 import SO100FollowerSTS3250
+    from SO100FollowerSTS3250 import SO100FollowerSTS3250
 
     # Load OpenVLA model
     print("Loading OpenVLA model (this may take a few minutes)...")

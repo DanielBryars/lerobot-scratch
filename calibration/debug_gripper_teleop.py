@@ -9,8 +9,8 @@ import json
 from pathlib import Path
 from lerobot.robots.so100_follower.config_so100_follower import SO100FollowerConfig
 from lerobot.teleoperators.so100_leader.config_so100_leader import SO100LeaderConfig
-from so100_sts3250 import SO100FollowerSTS3250
-from so100_leader_sts3250 import SO100LeaderSTS3250
+from SO100FollowerSTS3250 import SO100FollowerSTS3250
+from SO100LeaderSTS3250 import SO100LeaderSTS3250
 
 
 def load_config(config_path="config.json"):

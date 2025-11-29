@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 from lerobot.robots.so100_follower.config_so100_follower import SO100FollowerConfig
 from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
-from so100_sts3250 import SO100FollowerSTS3250
+from SO100FollowerSTS3250 import SO100FollowerSTS3250
 
 
 def load_config(config_path="config.json"):

@@ -25,7 +25,7 @@ from lerobot.policies.diffusion.modeling_diffusion import DiffusionPolicy
 from lerobot.policies.factory import make_pre_post_processors
 from lerobot.robots.so100_follower.config_so100_follower import SO100FollowerConfig
 from lerobot.utils.constants import OBS_STATE
-from so100_sts3250 import SO100FollowerSTS3250
+from SO100FollowerSTS3250 import SO100FollowerSTS3250
 
 
 def load_config(config_path="config.json"):

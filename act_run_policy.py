@@ -58,7 +58,7 @@ def main():
     import cv2
     from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
     from lerobot.robots.so100_follower.config_so100_follower import SO100FollowerConfig
-    from so100_sts3250 import SO100FollowerSTS3250
+    from SO100FollowerSTS3250 import SO100FollowerSTS3250
 
     # Load the trained policy
     print("Loading trained ACT policy from HuggingFace...")
