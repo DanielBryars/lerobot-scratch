@@ -377,6 +377,55 @@ def main():
             # This clears internal observation queues
             policy.reset()
 
+            # ========================================
+            # WARMUP: Fill observation queue before acting
+            # ========================================
+            # The policy needs n_obs_steps (2) frames of history.
+            # We capture observations without sending actions to fill the queue.
+            print(f"  Warming up observation queue ({n_obs_steps} frames)...")
+            for warmup_step in range(n_obs_steps):
+                # Capture frames
+                frames_dict = {}
+                for cam_name, cap in caps.items():
+                    ret, frame = cap.read()
+                    if ret:
+                        frames_dict[cam_name] = frame
+                    else:
+                        frames_dict[cam_name] = np.zeros((480, 640, 3), dtype=np.uint8)
+
+                # Read robot state
+                try:
+                    obs = robot.get_observation()
+                    state = [obs[f"{name}.pos"] for name in joint_names]
+                    state = np.array(state, dtype=np.float32)
+                except Exception:
+                    state = current_position.copy()
+
+                # Build observation batch
+                batch = {}
+                batch[OBS_STATE] = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
+
+                crop_h, crop_w = policy.config.crop_shape
+                for cam_name in ["base_0_rgb", "left_wrist_0_rgb"]:
+                    if cam_name in frames_dict:
+                        img = frames_dict[cam_name]
+                        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                        img_resized = cv2.resize(img_rgb, (crop_w, crop_h), interpolation=cv2.INTER_LINEAR)
+                        img_tensor = torch.from_numpy(img_resized).permute(2, 0, 1).float() / 255.0
+                        batch[f"observation.images.{cam_name}"] = img_tensor.unsqueeze(0)
+
+                # Apply preprocessor
+                batch = preprocessor(batch)
+                batch = {k: v for k, v in batch.items() if v is not None and isinstance(v, torch.Tensor)}
+
+                # Queue observation (but don't act on output)
+                with torch.no_grad():
+                    _ = policy.select_action(batch)
+
+                time.sleep(control_period)
+
+            print(f"  Warmup complete - observation queue filled")
+
             step = 0
             episode_running = True
 
@@ -425,6 +474,9 @@ def main():
 
                 # Images: resize full 480x640 to crop_shape (224x224) to capture entire scene
                 # This matches training where we resize instead of crop
+                # DEBUG: Set to True to test if model uses vision (if behavior is same, model ignores images)
+                TEST_BLIND_MODE = False  # Set True to mask images with mean values
+
                 crop_h, crop_w = policy.config.crop_shape
                 for cam_name in ["base_0_rgb", "left_wrist_0_rgb"]:
                     if cam_name in frames_dict:
@@ -435,6 +487,11 @@ def main():
                         img_resized = cv2.resize(img_rgb, (crop_w, crop_h), interpolation=cv2.INTER_LINEAR)
                         # Convert to tensor [C, H, W] and normalize to [0, 1]
                         img_tensor = torch.from_numpy(img_resized).permute(2, 0, 1).float() / 255.0
+
+                        # DEBUG: Replace with ImageNet mean if testing blind mode
+                        if TEST_BLIND_MODE:
+                            img_tensor = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1).expand(3, crop_h, crop_w)
+
                         # Add batch dimension: [1, C, H, W]
                         batch[f"observation.images.{cam_name}"] = img_tensor.unsqueeze(0)
 
@@ -489,9 +546,11 @@ def main():
                 else:
                     action_np = np.array(action)
 
-                # Debug: print final action
-                if step <= 2:
-                    print(f"  [DEBUG] Final action: shape={action_np.shape}, values={action_np[:3]}...")
+                # Debug: print final action (ALL values, in degrees)
+                if step <= 5:
+                    print(f"  [DEBUG] Step {step} - Action values (degrees):")
+                    for jn, av in zip(joint_names, action_np.flatten()[:6]):
+                        print(f"    {jn}: {av:.1f}")
 
                 # Remove batch dimension if present
                 if len(action_np.shape) > 1:
