@@ -60,6 +60,7 @@ class SO100FollowerSTS3250(SO100Follower):
                 "wrist_roll": Motor(5, "sts3250", norm_mode),
                 "gripper": Motor(6, "sts3250", MotorNormMode.RANGE_0_100),
             },
+            calibration=self.calibration,
         )
         self.cameras = make_cameras_with_dshow(config.cameras)
 
@@ -71,6 +72,7 @@ class SO100FollowerSTS3250(SO100Follower):
         if self.is_connected:
             raise DeviceAlreadyConnectedError(f"{self} already connected")
         self.bus.connect()
+        # Trust EEPROM calibration (set by align_arms.py)
         self.bus.calibration = self.bus.read_calibration()
         for cam in self.cameras.values():
             cam.connect()
@@ -113,6 +115,7 @@ class SO100LeaderSTS3250(SO100Leader):
                 "wrist_roll": Motor(5, "sts3250", MotorNormMode.RANGE_M100_100),
                 "gripper": Motor(6, "sts3250", MotorNormMode.RANGE_0_100),
             },
+            calibration=self.calibration,
         )
 
     @property
@@ -123,6 +126,7 @@ class SO100LeaderSTS3250(SO100Leader):
         if self.is_connected:
             raise DeviceAlreadyConnectedError(f"{self} already connected")
         self.bus.connect()
+        # Trust EEPROM calibration (set by align_arms.py)
         self.bus.calibration = self.bus.read_calibration()
         self.configure()
 

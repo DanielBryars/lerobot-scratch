@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(E:gitailerobot-scratchvenvScriptspython.exe -c \"import torch; print(''CUDA available:'', torch.cuda.is_available()); print(''Torch version:'', torch.__version__)\")"
+      "Bash(dir:*)",
+      "Bash(E:gitailerobot-scratchvenvScriptspython.exe E:gitailerobot-scratchlerobot-tutorialscheck_eeprom.py)"
     ],
     "deny": [],
     "ask": []

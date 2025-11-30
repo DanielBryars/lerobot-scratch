@@ -1,0 +1,137 @@
+{
+  "timestamp": "20251130_195943",
+  "arms": {
+    "follower": {
+      "before": {
+        "shoulder_pan": {
+          "homing_offset": 0,
+          "range_min": 0,
+          "range_max": 4095
+        },
+        "shoulder_lift": {
+          "homing_offset": 0,
+          "range_min": 0,
+          "range_max": 4095
+        },
+        "elbow_flex": {
+          "homing_offset": 0,
+          "range_min": 0,
+          "range_max": 4095
+        },
+        "wrist_flex": {
+          "homing_offset": 0,
+          "range_min": 0,
+          "range_max": 4095
+        },
+        "wrist_roll": {
+          "homing_offset": 0,
+          "range_min": 0,
+          "range_max": 4095
+        },
+        "gripper": {
+          "homing_offset": 0,
+          "range_min": 0,
+          "range_max": 4095
+        }
+      },
+      "after": {
+        "shoulder_pan": {
+          "homing_offset": 1744,
+          "range_min": 0,
+          "range_max": 4095
+        },
+        "shoulder_lift": {
+          "homing_offset": 770,
+          "range_min": 0,
+          "range_max": 4095
+        },
+        "elbow_flex": {
+          "homing_offset": 2047,
+          "range_min": 0,
+          "range_max": 4095
+        },
+        "wrist_flex": {
+          "homing_offset": -601,
+          "range_min": 0,
+          "range_max": 4095
+        },
+        "wrist_roll": {
+          "homing_offset": -4,
+          "range_min": 0,
+          "range_max": 4095
+        },
+        "gripper": {
+          "homing_offset": -680,
+          "range_min": 0,
+          "range_max": 4095
+        }
+      }
+    },
+    "leader": {
+      "before": {
+        "shoulder_pan": {
+          "homing_offset": 574,
+          "range_min": 0,
+          "range_max": 4095
+        },
+        "shoulder_lift": {
+          "homing_offset": 791,
+          "range_min": 0,
+          "range_max": 4095
+        },
+        "elbow_flex": {
+          "homing_offset": -816,
+          "range_min": 0,
+          "range_max": 4095
+        },
+        "wrist_flex": {
+          "homing_offset": -1056,
+          "range_min": 0,
+          "range_max": 4095
+        },
+        "wrist_roll": {
+          "homing_offset": -103,
+          "range_min": 0,
+          "range_max": 4095
+        },
+        "gripper": {
+          "homing_offset": -560,
+          "range_min": 0,
+          "range_max": 4095
+        }
+      },
+      "after": {
+        "shoulder_pan": {
+          "homing_offset": 579,
+          "range_min": 0,
+          "range_max": 4095
+        },
+        "shoulder_lift": {
+          "homing_offset": 773,
+          "range_min": 0,
+          "range_max": 4095
+        },
+        "elbow_flex": {
+          "homing_offset": -758,
+          "range_min": 0,
+          "range_max": 4095
+        },
+        "wrist_flex": {
+          "homing_offset": -1077,
+          "range_min": 0,
+          "range_max": 4095
+        },
+        "wrist_roll": {
+          "homing_offset": -99,
+          "range_min": 0,
+          "range_max": 4095
+        },
+        "gripper": {
+          "homing_offset": -555,
+          "range_min": 0,
+          "range_max": 4095
+        }
+      }
+    }
+  }
+}

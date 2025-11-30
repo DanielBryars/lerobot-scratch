@@ -9,6 +9,7 @@ Calibrates one arm at a time:
 
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -20,6 +21,14 @@ from lerobot.motors.feetech import FeetechMotorsBus
 config_path = Path(__file__).parent.parent / "config.json"
 with open(config_path) as f:
     config = json.load(f)
+
+# Create calibration log directory
+LOG_DIR = Path(__file__).parent.parent / "calibration_logs"
+LOG_DIR.mkdir(exist_ok=True)
+
+# Generate timestamp for this calibration run
+RUN_TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
+calibration_log = {"timestamp": RUN_TIMESTAMP, "arms": {}}
 
 
 def create_bus(port: str) -> FeetechMotorsBus:
@@ -36,14 +45,34 @@ def create_bus(port: str) -> FeetechMotorsBus:
     )
 
 
+def read_calibration_dict(bus: FeetechMotorsBus) -> dict:
+    """Read calibration from EEPROM and return as JSON-serializable dict."""
+    cal = bus.read_calibration()
+    return {
+        motor: {
+            "homing_offset": c.homing_offset,
+            "range_min": c.range_min,
+            "range_max": c.range_max,
+        }
+        for motor, c in cal.items()
+    }
+
+
 def calibrate_arm(bus: FeetechMotorsBus, name: str):
     """Calibrate a single arm."""
     print(f"\n{'='*60}")
     print(f"CALIBRATING {name.upper()}")
     print(f"{'='*60}")
 
+    # Record BEFORE calibration values
+    before_cal = read_calibration_dict(bus)
+    calibration_log["arms"][name] = {"before": before_cal}
+    print(f"\nBEFORE calibration (recorded to log):")
+    for motor, cal in before_cal.items():
+        print(f"  {motor}: homing_offset={cal['homing_offset']}")
+
     # Reset existing calibration
-    print("Resetting existing EEPROM calibration...")
+    print("\nResetting existing EEPROM calibration...")
     bus.reset_calibration()
 
     # Show current raw position
@@ -59,7 +88,26 @@ Move {name.upper()} to the MIDDLE of its range:
 - Gripper half open
 
 This position will become "2048" (center) for all joints.
+
+NOTE: If any joint is EXACTLY at 0 or 4096, move it slightly!
 """)
+
+    # Check for problematic positions before proceeding
+    while True:
+        problematic = []
+        for motor in bus.motors:
+            raw = bus.read("Present_Position", motor, normalize=False)
+            if raw == 0 or raw == 4096 or raw == 2048:
+                problematic.append((motor, raw))
+
+        if problematic:
+            print(f"\nWARNING: These motors are at problematic positions:")
+            for motor, raw in problematic:
+                print(f"  {motor}: {raw} (move slightly!)")
+            input("Adjust and press ENTER to re-check...")
+        else:
+            break
+
     input(f"Press ENTER when {name.upper()} is in position...")
 
     # Set half-turn homings
@@ -75,6 +123,13 @@ This position will become "2048" (center) for all joints.
     for motor in bus.motors:
         raw = bus.read("Present_Position", motor, normalize=False)
         print(f"  {motor}: {raw}")
+
+    # Record AFTER calibration values
+    after_cal = read_calibration_dict(bus)
+    calibration_log["arms"][name]["after"] = after_cal
+    print(f"\nAFTER calibration (recorded to log):")
+    for motor, cal in after_cal.items():
+        print(f"  {motor}: homing_offset={cal['homing_offset']}")
 
 
 def main():
@@ -121,6 +176,13 @@ After calibration, both will report ~2048 at that position.
     print("\n" + "="*60)
     print("DONE!")
     print("="*60)
+
+    # Save calibration log
+    log_file = LOG_DIR / f"calibration_{RUN_TIMESTAMP}.json"
+    with open(log_file, "w") as f:
+        json.dump(calibration_log, f, indent=2)
+    print(f"\nCalibration log saved to: {log_file}")
+
     print("""
 If the Diff column is close to 0, calibration is good!
 Now try:
