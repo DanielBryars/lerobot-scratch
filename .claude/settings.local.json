@@ -1,27 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git mv:*)",
-      "Bash(cmd /c \"mkdir linux 2>nul & mkdir windows 2>nul & echo Directories created\")",
-      "Bash(test:*)",
-      "Bash(python:*)",
-      "WebSearch",
-      "Bash(venv/Scripts/activate:*)",
-      "Bash(lerobot-find-cameras:*)",
-      "Bash(venv\\Scripts\\python.exe:*)",
-      "Bash(venv/Scripts/python.exe -m lerobot.scripts.find_cameras:*)",
-      "Bash(venv/Scripts/python.exe:*)",
-      "Bash(venv/Scripts/pip.exe show:*)",
-      "Bash(venv/Scripts/pip.exe install:*)",
-      "Bash(dir:*)",
-      "Bash(nul)",
-      "WebFetch(domain:github.com)",
-      "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(D:/git/lerobot-scratch/venv/Scripts/python.exe:*)",
-      "Bash(D:/git/lerobot-scratch/venv/Scripts/pip.exe show:*)",
-      "Bash(D:/git/lerobot-scratch/venv/Scripts/pip.exe install:*)",
-      "Bash(findstr:*)",
-      "Bash(E:\\git\\ai\\lerobot-scratch\\venv\\Scripts\\python.exe:*)"
+      "Bash(E:gitailerobot-scratchvenvScriptspython.exe -c \"import torch; print(''CUDA available:'', torch.cuda.is_available()); print(''Torch version:'', torch.__version__)\")"
     ],
     "deny": [],
     "ask": []

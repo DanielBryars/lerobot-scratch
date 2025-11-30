@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lerobot_robot_sts3250"
+version = "0.1.0"
+description = "LeRobot plugin for SO100 with STS3250 motors"
+requires-python = ">=3.10"
+
+[tool.setuptools.packages.find]
+include = ["lerobot_robot_sts3250*"]

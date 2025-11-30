@@ -1,35 +1,36 @@
 """
-Custom SO100 Leader for STS3250 motors (Phospho pre-calibrated).
-Uses fixed calibration so leader and follower have matching normalization.
+SO100 Leader with STS3250 motors.
+Registered as 'so100_leader_sts3250' for use with lerobot CLI tools.
 """
 
-from lerobot.motors import Motor, MotorCalibration, MotorNormMode
+from dataclasses import dataclass
+
+from lerobot.motors import Motor, MotorNormMode
 from lerobot.motors.feetech import FeetechMotorsBus, OperatingMode
 from lerobot.teleoperators.so100_leader import SO100LeaderConfig, SO100Leader
+from lerobot.teleoperators.config import TeleoperatorConfig
 from lerobot.utils.errors import DeviceAlreadyConnectedError
 
 
-# Fixed calibration - same for both leader and follower so normalization matches
-# homing_offset=0 means we use raw motor positions, range is full 0-4095
-FIXED_CALIBRATION = {
-    "shoulder_pan": MotorCalibration(id=1, drive_mode=0, homing_offset=0, range_min=0, range_max=4095),
-    "shoulder_lift": MotorCalibration(id=2, drive_mode=0, homing_offset=0, range_min=0, range_max=4095),
-    "elbow_flex": MotorCalibration(id=3, drive_mode=0, homing_offset=0, range_min=0, range_max=4095),
-    "wrist_flex": MotorCalibration(id=4, drive_mode=0, homing_offset=0, range_min=0, range_max=4095),
-    "wrist_roll": MotorCalibration(id=5, drive_mode=0, homing_offset=0, range_min=0, range_max=4095),
-    "gripper": MotorCalibration(id=6, drive_mode=0, homing_offset=0, range_min=0, range_max=4095),
-}
+@TeleoperatorConfig.register_subclass("so100_leader_sts3250")
+@dataclass
+class SO100LeaderSTS3250Config(SO100LeaderConfig):
+    """Config for SO100 Leader with STS3250 motors."""
+    pass  # Inherits all fields from SO100LeaderConfig
 
 
 class SO100LeaderSTS3250(SO100Leader):
-    """SO100 Leader teleoperator with STS3250 motors (Phospho pre-calibrated)."""
+    """SO100 Leader teleoperator with STS3250 motors."""
 
-    def __init__(self, config: SO100LeaderConfig):
+    config_class = SO100LeaderSTS3250Config
+    name = "so100_leader_sts3250"
+
+    def __init__(self, config: SO100LeaderSTS3250Config):
         # Call grandparent init to set up base teleoperator properties
         super(SO100Leader, self).__init__(config)
         self.config = config
 
-        # Use sts3250 motor model with fixed calibration (same as follower)
+        # Use sts3250 motor model - calibration read from EEPROM on connect
         self.bus = FeetechMotorsBus(
             port=self.config.port,
             motors={
@@ -40,20 +41,21 @@ class SO100LeaderSTS3250(SO100Leader):
                 "wrist_roll": Motor(5, "sts3250", MotorNormMode.RANGE_M100_100),
                 "gripper": Motor(6, "sts3250", MotorNormMode.RANGE_0_100),
             },
-            calibration=FIXED_CALIBRATION,
         )
 
     @property
     def is_calibrated(self) -> bool:
-        return True  # Using fixed calibration
+        return self.bus.is_calibrated
 
     def connect(self, calibrate: bool = True) -> None:
-        """Connect without modifying motor calibration."""
+        """Connect and read calibration from motor EEPROM."""
         if self.is_connected:
             raise DeviceAlreadyConnectedError(f"{self} already connected")
 
         self.bus.connect()
-        # Don't read or write calibration - use fixed calibration from __init__
+
+        # Read calibration from EEPROM (set by align_arms.py)
+        self.bus.calibration = self.bus.read_calibration()
 
         self.configure()
 
