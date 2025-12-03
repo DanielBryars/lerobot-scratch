@@ -1,0 +1,11 @@
+episode_id,task,policy,success,steps,completion_time,final_distance,grasp_achieved,path_length,path_efficiency,timestamp
+0,PickPlaceCube-v0,random,False,50,1.0,,False,0.0,,2025-12-03T10:23:51.575019
+1,PickPlaceCube-v0,random,False,50,1.0,,False,0.0,,2025-12-03T10:23:51.626665
+2,PickPlaceCube-v0,random,False,50,1.0,,False,0.0,,2025-12-03T10:23:51.679077
+3,PickPlaceCube-v0,random,False,50,1.0,,False,0.0,,2025-12-03T10:23:51.734005
+4,PickPlaceCube-v0,random,False,50,1.0,,False,0.0,,2025-12-03T10:23:51.787112
+5,PickPlaceCube-v0,random,False,50,1.0,,False,0.0,,2025-12-03T10:23:51.840985
+6,PickPlaceCube-v0,random,False,50,1.0,,False,0.0,,2025-12-03T10:23:51.897647
+7,PickPlaceCube-v0,random,False,50,1.0,,False,0.0,,2025-12-03T10:23:51.949808
+8,PickPlaceCube-v0,random,False,50,1.0,,False,0.0,,2025-12-03T10:23:52.003589
+9,PickPlaceCube-v0,random,False,50,1.0,,False,0.0,,2025-12-03T10:23:52.063142

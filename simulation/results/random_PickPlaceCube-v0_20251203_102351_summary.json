@@ -1,0 +1,15 @@
+{
+  "policy": "random",
+  "task": "PickPlaceCube-v0",
+  "total_episodes": 10,
+  "success_count": 0,
+  "success_rate": 0.0,
+  "avg_completion_time": null,
+  "std_completion_time": null,
+  "avg_steps": 50.0,
+  "avg_path_length": 0.0,
+  "grasp_success_rate": 0.0,
+  "avg_final_distance": null,
+  "run_id": "20251203_102351",
+  "timestamp": "2025-12-03T10:23:52.076045"
+}

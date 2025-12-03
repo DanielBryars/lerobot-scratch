@@ -7,8 +7,12 @@ SET HF_HOME=E:\huggingface_cache
 
 SET HF_USER=danbhf
 SET DATASET_BASE=so100_pick_and_place_white_lego
+SET TASK="Pick up the white lego cube from the left orange square and place it within the orange square on the right"
+SET TASK="Pick up the white lego cube from the blue triangle and place it within the orange square on the right"
+SET TASK="Pick up the white lego cube from the red cross and place it within the orange square on the right"
 SET TASK="Pick up the white lego cube and place it within the orange square on the right"
-SET NUM_EPISODES=20
+
+SET NUM_EPISODES=50
 
 REM Generate simple timestamp using PowerShell
 for /f %%i in ('powershell -command "Get-Date -Format yyyyMMdd_HHmmss"') do set TIMESTAMP=%%i

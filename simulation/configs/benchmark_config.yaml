@@ -1,0 +1,77 @@
+# Benchmark Configuration for SO100 Simulation
+# Usage: python scripts/benchmark_runner.py --config configs/benchmark_config.yaml
+
+# Global settings (can be overridden per task)
+settings:
+  episodes: 100        # Episodes per task
+  max_steps: 500       # Maximum steps per episode
+  seed: 42             # Random seed for reproducibility
+  render: false        # Set to true for visualization (slower)
+
+# Tasks to evaluate
+tasks:
+  - name: PickPlaceCube-v0
+    description: Pick up cube and place at target location
+    episodes: 100
+    max_steps: 500
+
+  - name: LiftCube-v0
+    description: Lift cube to target height
+    episodes: 50
+    max_steps: 300
+
+  - name: PushCube-v0
+    description: Push cube to target position
+    episodes: 50
+    max_steps: 300
+
+  - name: ReachCube-v0
+    description: Move end-effector to cube position
+    episodes: 50
+    max_steps: 200
+
+# Policies to compare
+policies:
+  # Baseline - random actions
+  - name: random
+    type: random
+    description: Random action baseline
+
+  # ACT policy trained on pick-and-place
+  - name: danbhf/act_so100_pick_place
+    type: act
+    description: ACT policy trained on real SO100 data
+
+  # SmolVLA policy
+  - name: danbhf/smolVla_so100_pick_place
+    type: smolvla
+    description: SmolVLA vision-language-action model
+
+  # Local checkpoint example (uncomment to use)
+  # - name: ./outputs/train_2024xxxx/checkpoint_100000
+  #   type: act
+  #   description: Local training checkpoint
+
+# Success criteria thresholds
+success_criteria:
+  # Distance threshold for task success (meters)
+  position_threshold: 0.05   # 5cm
+
+  # Height threshold for lift tasks
+  height_threshold: 0.10     # 10cm
+
+  # Grasp detection threshold
+  grasp_threshold: 0.02      # 2cm
+
+# Output configuration
+output:
+  # Save episode-level results
+  save_episodes: true
+
+  # Generate comparison plots
+  generate_plots: true
+
+  # Results format
+  formats:
+    - csv
+    - json

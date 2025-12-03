@@ -7,8 +7,8 @@ SET HF_HOME=E:\huggingface_cache
 SET PYTHON=venv\Scripts\python.exe
 SET HF_USER=danbhf
 REM Original merged dataset too long for wandb tags, use shorter name
-SET DATASET=so100_pick_and_place_white_lego_210630_212409
-SET POLICY_NAME=act_so100_pick_place
+SET DATASET=so100_vs_p_n_p_white_lego_50_20251201_223240
+SET POLICY_NAME=smolVla_so100_pick_place_2
 
 REM First run: merge the datasets (comment out goto after merge is done)
 REM goto skip_merge
@@ -26,14 +26,17 @@ goto skip_training
 REM Fresh training (skip this if resuming)
 %PYTHON% -m lerobot.scripts.lerobot_train ^
      --dataset.repo_id=%HF_USER%/%DATASET% ^
-     --policy.type=act ^
+     --policy.path="lerobot/smolvla_base" ^
+     --batch_size=64 ^
+     --steps=40000 ^
      --output_dir=outputs/train/%POLICY_NAME% ^
      --job_name=%POLICY_NAME% ^
      --policy.device=cuda ^
      --wandb.enable=true ^
-     --wandb.project=lerobot-so100-act ^
-     --wandb.notes="Merged datasets: so100_pick_and_place_white_lego_20251129_210630 + so100_pick_and_place_white_lego_20251129_212409" ^
-     --policy.repo_id=%HF_USER%/%POLICY_NAME%
+     --wandb.project=lerobot-so100-smolVla ^
+     --wandb.notes="%DATASET%" ^
+     --policy.repo_id=%HF_USER%/%POLICY_NAME% ^
+     --rename_map="{'observation.images.base_0_rgb': 'observation.images.camera1', 'observation.images.left_wrist_0_rgb': 'observation.images.camera2'}"
 :skip_training
 
 goto skip_resume
@@ -46,15 +49,19 @@ SET CHECKPOINT_PATH=outputs/train/%POLICY_NAME%/checkpoints/060000/pretrained_mo
 
 REM goto skip_inference
 REM Run inference with trained policy
+REM Generate timestamp for unique eval dataset name
+for /f %%i in ('powershell -command "Get-Date -Format yyyyMMdd_HHmmss"') do set EVAL_TIMESTAMP=%%i
 %PYTHON% -m lerobot.scripts.lerobot_record ^
     --robot.type=so100_follower_sts3250 ^
     --robot.port=COM7 ^
     --robot.id=follower_so100 ^
-    --robot.cameras="{'base_0_rgb': {'type': 'opencv', 'index_or_path': 2, 'width': 640, 'height': 480, 'fps': 30}, 'left_wrist_0_rgb': {'type': 'opencv', 'index_or_path': 0, 'width': 640, 'height': 480, 'fps': 30}}" ^
-    --dataset.repo_id=%HF_USER%/eval_%POLICY_NAME% ^
+    --robot.cameras="{'camera1': {'type': 'opencv', 'index_or_path': 2, 'width': 640, 'height': 480, 'fps': 30}, 'camera2': {'type': 'opencv', 'index_or_path': 0, 'width': 640, 'height': 480, 'fps': 30}}" ^
+    --teleop.type=so100_leader_sts3250 ^
+    --teleop.port=COM8 ^
+    --dataset.repo_id=%HF_USER%/eval_%POLICY_NAME%_%EVAL_TIMESTAMP% ^
     --dataset.num_episodes=10 ^
     --dataset.single_task="Pick up the white lego cube and place it within the orange square on the right" ^
-    --policy.path=%HF_USER%/%POLICY_NAME%
+    --policy.path="%HF_USER%/%POLICY_NAME%"
 :skip_inference
 
 pause
