@@ -18,10 +18,8 @@ import sys
 import json
 from pathlib import Path
 from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
-from lerobot.robots.so100_follower.config_so100_follower import SO100FollowerConfig
-from lerobot.teleoperators.so100_leader.config_so100_leader import SO100LeaderConfig
-from SO100FollowerSTS3250 import SO100FollowerSTS3250
-from SO100LeaderSTS3250 import SO100LeaderSTS3250
+from SO100FollowerSTS3250 import SO100FollowerSTS3250, SO100FollowerSTS3250Config
+from SO100LeaderSTS3250 import SO100LeaderSTS3250, SO100LeaderSTS3250Config
 
 
 def load_config(config_path="config.json"):
@@ -57,7 +55,7 @@ def main():
 
     # Configure and connect leader
     print(f"\nConnecting to leader arm at {leader_port}...")
-    leader_cfg = SO100LeaderConfig(port=leader_port, id=leader_id)
+    leader_cfg = SO100LeaderSTS3250Config(port=leader_port, id=leader_id)
     leader = SO100LeaderSTS3250(leader_cfg)
 
     try:
@@ -69,7 +67,7 @@ def main():
 
     # Configure and connect follower
     print(f"\nConnecting to follower arm at {follower_port}...")
-    follower_cfg = SO100FollowerConfig(port=follower_port, id=follower_id, cameras=camera_config)
+    follower_cfg = SO100FollowerSTS3250Config(port=follower_port, id=follower_id, cameras=camera_config)
     follower = SO100FollowerSTS3250(follower_cfg)
 
     try:

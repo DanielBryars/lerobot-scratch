@@ -1,9 +1,6 @@
 """
 SO100 Follower with STS3250 motors.
 Registered as 'so100_follower_sts3250' for use with lerobot CLI tools.
-
-Uses lerobot's standard file-based calibration (JSON files) instead of EEPROM.
-Calibration files stored in: ~/.cache/huggingface/lerobot/calibration/robots/
 """
 
 import platform
@@ -48,25 +45,19 @@ class SO100FollowerSTS3250Config(SO100FollowerConfig):
 
 
 class SO100FollowerSTS3250(SO100Follower):
-    """SO100 Follower robot with STS3250 motors.
-
-    Uses lerobot's standard file-based calibration mechanism.
-    Run calibration with:
-        lerobot-calibrate --robot.type=so100_follower_sts3250 --robot.port=COM7 --robot.id=follower
-    """
+    """SO100 Follower robot with STS3250 motors."""
 
     config_class = SO100FollowerSTS3250Config
     name = "so100_follower_sts3250"
 
     def __init__(self, config: SO100FollowerSTS3250Config):
         # Call grandparent init to set up base robot properties
-        # This loads calibration from JSON file if it exists
         super(SO100Follower, self).__init__(config)
         self.config = config
 
         norm_mode = MotorNormMode.DEGREES if config.use_degrees else MotorNormMode.RANGE_M100_100
 
-        # Use sts3250 motor model instead of sts3215
+        # Use sts3250 motor model - calibration read from EEPROM on connect
         self.bus = FeetechMotorsBus(
             port=self.config.port,
             motors={
@@ -82,67 +73,22 @@ class SO100FollowerSTS3250(SO100Follower):
 
     @property
     def is_calibrated(self) -> bool:
-        """Check if calibration file exists and matches motors."""
-        # Check we have calibration data loaded from file
-        if not self.calibration:
-            return False
-        # Check all motors have calibration
-        return all(motor in self.calibration for motor in self.bus.motors)
+        return self.bus.is_calibrated
 
     def connect(self, calibrate: bool = True) -> None:
-        """Connect and apply calibration from JSON file."""
+        """Connect and read calibration from motor EEPROM."""
         if self.is_connected:
             raise DeviceAlreadyConnectedError(f"{self} already connected")
 
         self.bus.connect()
 
-        # Apply calibration from JSON file (loaded in __init__ by parent class)
-        if self.calibration:
-            self.bus.calibration = self.calibration
-        elif calibrate:
-            self.calibrate()
+        # Read calibration from EEPROM (set by align_arms.py)
+        self.bus.calibration = self.bus.read_calibration()
 
         for cam in self.cameras.values():
             cam.connect()
 
         self.configure()
-
-    def calibrate(self) -> None:
-        """Run interactive calibration and save to JSON file."""
-        print(f"\nCalibrating {self.name}...")
-        print("Move arm to the middle position (all joints at center of range)")
-        print("Press Enter when ready...")
-        input()
-
-        # Disable torque for manual positioning
-        self.bus.disable_torque()
-
-        # Set homing offsets so current position = middle
-        self.bus.set_half_turn_homings()
-
-        # Record range by moving to limits
-        print("\nNow move each joint to its limits to record the range.")
-        print("Press Enter when done...")
-        input()
-
-        mins, maxes = self.bus.record_ranges_of_motion()
-
-        # Build calibration dict
-        self.calibration = {}
-        for motor in self.bus.motors:
-            from lerobot.motors import MotorCalibration
-            self.calibration[motor] = MotorCalibration(
-                id=self.bus.motors[motor].id,
-                drive_mode=0,
-                homing_offset=0,  # Not using EEPROM offset
-                range_min=mins[motor],
-                range_max=maxes[motor],
-            )
-
-        # Save to JSON file
-        self._save_calibration()
-        self.bus.calibration = self.calibration
-        print(f"Calibration saved to {self.calibration_fpath}")
 
     def configure(self) -> None:
         """Configure motors for position control."""
