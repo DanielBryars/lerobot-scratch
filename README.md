@@ -113,6 +113,78 @@ The `config.json` file stores hardware device paths and settings. It's automatic
 
 **Note:** Device paths (like `/dev/ttyACM0`, `/dev/video0`) can change between reboots or when USB devices are reconnected. Re-run `autoconfigure.py` if devices stop working.
 
+## Motor Calibration (STS3250)
+
+The SO-100 arms use STS3250 servo motors with 12-bit magnetic encoders (4096 counts per revolution). Calibration is a **two-step process** that ensures consistent, accurate joint positions.
+
+### Why Two Steps?
+
+**Problem:** Each motor is assembled at a different physical angle, so the raw encoder reading at "zero pose" varies between motors (e.g., one motor might read 2048, another 4093, another 156).
+
+**Wraparound issue:** Motors assembled near the encoder boundary (0/4095) cause calibration ranges to wrap around and exceed valid bounds. For example, a motor at position 4093 with ±60° range would calculate `range_max = 5194`, which is invalid.
+
+**Solution:**
+1. **EEPROM homing offset** - Centers all motors at ~2048 at zero pose (prevents wraparound)
+2. **File-based calibration** - Maps encoder ranges to normalized joint angles
+
+### Calibration Workflow
+
+Position arms at **zero pose** (straight up, gripper closed) before each step.
+
+```bash
+# Step 1: Write EEPROM homing offsets (one arm at a time)
+# This centers motor readings at 2048, preventing wraparound issues
+python calibration/write_homing_offset.py --leader
+python calibration/write_homing_offset.py --follower
+
+# Step 2: File-based calibration (one arm at a time)
+# This calculates the encoder range for each joint's motion limits
+python calibration/calibrate_from_zero.py --leader
+python calibration/calibrate_from_zero.py --follower
+```
+
+### Teleoperation
+
+Once calibrated, you can teleoperate:
+
+```bash
+# Real leader → real follower
+python teleoperate_so100.py
+
+# Real leader → simulated robot
+python lerobot-gym/teleop_sim.py --leader
+
+# Real follower → simulated robot
+python lerobot-gym/teleop_sim.py --follower
+```
+
+### Calibration Files
+
+Calibration is stored in two places:
+
+1. **EEPROM (on motor):** `Homing_Offset` register - persists across power cycles
+2. **JSON files:** `~/.cache/huggingface/lerobot/calibration/`
+   - `teleoperators/so100_leader_sts3250/leader_so100.json`
+   - `robots/so100_follower_sts3250/follower_so100.json`
+
+### Diagnostic Tools
+
+```bash
+# Read all EEPROM values from motors
+python calibration/read_eeprom.py --leader --follower
+
+# Check if motors are centered at zero pose
+python check_centering.py
+```
+
+### Technical Details
+
+- **Sign-magnitude encoding:** The `Homing_Offset` register uses bit 11 as the sign bit (not two's complement)
+  - Positive: value as-is (0-2047)
+  - Negative: `0x800 | abs(value)`
+- **EEPROM unlock:** The `Lock` register must be set to 0 before writing to EEPROM, then 1 to lock
+- **Motor resolution:** 4096 counts/revolution, so 2048 = center position
+
 ## USB Device Sharing (Windows + WSL)
 
 When running WSL on Windows, USB devices need to be explicitly shared from Windows to WSL.
