@@ -46,6 +46,25 @@ def load_config():
     return None
 
 
+def load_calibration(arm_id: str = "leader_so100"):
+    """Load calibration from JSON file (same as teleop_sim.py)."""
+    import draccus
+    from lerobot.motors import MotorCalibration
+    from lerobot.utils.constants import HF_LEROBOT_CALIBRATION
+
+    calib_path = HF_LEROBOT_CALIBRATION / "teleoperators" / "so100_leader_sts3250" / f"{arm_id}.json"
+
+    if not calib_path.exists():
+        raise FileNotFoundError(
+            f"Calibration file not found: {calib_path}\n"
+            f"Run calibration first or check HF_LEROBOT_CALIBRATION path."
+        )
+
+    print(f"Loading calibration from: {calib_path}")
+    with open(calib_path) as f, draccus.config_type("json"):
+        return draccus.load(dict[str, MotorCalibration], f)
+
+
 def create_leader_bus(port: str):
     """Create motor bus for leader arm with STS3250 motors."""
     from lerobot.motors import Motor, MotorNormMode
@@ -89,9 +108,8 @@ def run_teleop(port: str, enable_vr: bool = True, fps: int = 30):
     bus = create_leader_bus(port)
     bus.connect()
 
-    # Load calibration from EEPROM
-    print("Loading calibration from EEPROM...")
-    bus.calibration = bus.read_calibration()
+    # Load calibration from JSON file (same as teleop_sim.py)
+    bus.calibration = load_calibration("leader_so100")
     bus.disable_torque()
     print("Leader arm connected!")
 
