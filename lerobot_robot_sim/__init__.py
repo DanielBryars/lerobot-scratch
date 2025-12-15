@@ -250,9 +250,9 @@ class SO100Sim(Robot):
             return False
 
         try:
-            # Get duplo body position (freejoint: qpos[6:9] is xyz position)
-            # The duplo freejoint comes after the 6 arm joints
-            duplo_pos = self.mj_data.qpos[6:9].copy()
+            # Get duplo body position using MuJoCo body xpos (world position)
+            duplo_body_id = mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_BODY, "duplo")
+            duplo_pos = self.mj_data.xpos[duplo_body_id].copy()
 
             # Bowl position (static body at 0.217, -0.225, 0)
             bowl_x, bowl_y = 0.217, -0.225
@@ -280,7 +280,7 @@ class SO100Sim(Robot):
 
             return result
         except Exception as e:
-            logger.debug(f"Task completion check failed: {e}")
+            logger.warning(f"Task completion check failed: {e}")
             return False
 
     def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
