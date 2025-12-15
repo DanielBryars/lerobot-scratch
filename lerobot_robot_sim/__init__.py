@@ -241,6 +241,48 @@ class SO100Sim(Robot):
 
         return obs_dict
 
+    def is_task_complete(self) -> bool:
+        """Check if the duplo block is inside the bowl.
+
+        Returns True if the duplo center is within the bowl bounds and resting.
+        """
+        if not self.is_connected:
+            return False
+
+        try:
+            # Get duplo body position (freejoint: qpos[6:9] is xyz position)
+            # The duplo freejoint comes after the 6 arm joints
+            duplo_pos = self.mj_data.qpos[6:9].copy()
+
+            # Bowl position (static body at 0.217, -0.225, 0)
+            bowl_x, bowl_y = 0.217, -0.225
+            bowl_half_size = 0.06  # 12cm x 12cm bowl
+
+            # Check if duplo is within bowl XY bounds
+            in_x = abs(duplo_pos[0] - bowl_x) < bowl_half_size
+            in_y = abs(duplo_pos[1] - bowl_y) < bowl_half_size
+
+            # Check if duplo is at bowl height (resting inside, not above)
+            # Bowl base is at z=0.002, duplo half-height is 0.0096
+            # So duplo should be around z = 0.002 + 0.0096 = ~0.012 when resting in bowl
+            # Use 5cm threshold to account for settling
+            in_z = duplo_pos[2] < 0.05  # Below 5cm means it's resting, not held up
+
+            result = in_x and in_y and in_z
+
+            # Debug logging every 100 calls
+            if not hasattr(self, '_task_check_count'):
+                self._task_check_count = 0
+            self._task_check_count += 1
+            if self._task_check_count % 100 == 0:
+                logger.info(f"Task check: duplo=({duplo_pos[0]:.3f}, {duplo_pos[1]:.3f}, {duplo_pos[2]:.3f}) "
+                           f"in_x={in_x} in_y={in_y} in_z={in_z} → {result}")
+
+            return result
+        except Exception as e:
+            logger.debug(f"Task completion check failed: {e}")
+            return False
+
     def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected.")
