@@ -26,6 +26,28 @@ import numpy as np
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Text-to-speech setup
+try:
+    import pyttsx3
+    _tts_engine = pyttsx3.init()
+    _tts_engine.setProperty('rate', 180)  # Speed
+    _tts_available = True
+except Exception:
+    _tts_available = False
+    logger.warning("pyttsx3 not available, using print-only announcements")
+
+
+def speak(text: str):
+    """Speak text aloud and print it."""
+    print(f"\n🔊 {text}")
+    if _tts_available:
+        try:
+            _tts_engine.say(text)
+            _tts_engine.runAndWait()
+        except Exception:
+            pass
+
+
 # Import the sim plugin (registers so100_sim)
 import lerobot_robot_sim
 from lerobot_robot_sim import SO100Sim, SO100SimConfig, MOTOR_NAMES
@@ -90,8 +112,9 @@ def record_episode(
     print(f"\n{'='*50}")
     print(f"Episode {episode_idx + 1}")
     print(f"{'='*50}")
-    print("Move leader arm to starting position.")
-    print("Press ENTER to start recording...")
+
+    speak("Move leader arm to starting position")
+    speak("Press Enter to start recording")
     input()
 
     # Start episode buffer
@@ -100,8 +123,9 @@ def record_episode(
     frame_time = 1.0 / fps
     start_time = time.time()
 
-    print("\nRecording... (auto-stops when Duplo lands in bowl)")
-    print("Press 'q' to manually stop, 'd' to discard episode")
+    speak("Recording started")
+    print("(auto-stops when Duplo lands in bowl)")
+    print("Press 'q' to stop, 'd' to discard")
 
     # For keyboard input
     stop_flag = threading.Event()
@@ -134,7 +158,7 @@ def record_episode(
 
         # Check timeout
         if elapsed_total > max_duration:
-            print(f"\nTimeout after {max_duration:.0f}s")
+            speak("Timeout")
             break
 
         # Read leader arm (with error recovery)
@@ -179,9 +203,7 @@ def record_episode(
             task_complete_frames += 1
             if task_complete_frames >= 10:  # Debounce: 10 frames (~0.3s)
                 task_complete = True
-                print("\n" + "="*50)
-                print("TASK COMPLETE! Duplo is in the bowl!")
-                print("="*50)
+                speak("Task complete! Duplo is in the bowl!")
                 # Record a few more frames then stop
                 for _ in range(15):  # ~0.5s extra
                     time.sleep(frame_time)
@@ -214,7 +236,7 @@ def record_episode(
 
     # Check if discarded
     if discard_flag.is_set():
-        print("Episode DISCARDED by user.")
+        speak("Episode discarded")
         dataset.clear_episode_buffer()
         return False, False
 
@@ -223,15 +245,16 @@ def record_episode(
 
     # Ask to save if task incomplete
     if not task_complete:
-        save = input("Task incomplete. Save anyway? [y/N]: ").strip().lower()
+        speak("Task incomplete. Save anyway?")
+        save = input("Save? [y/N]: ").strip().lower()
         if save != 'y':
-            print("Episode discarded.")
+            speak("Episode discarded")
             dataset.clear_episode_buffer()
             return False, False
 
     # Save episode
     dataset.save_episode()
-    print(f"Episode saved!")
+    speak("Episode saved")
     return True, task_complete
 
 
@@ -244,6 +267,7 @@ def main():
     parser.add_argument("--root", type=str, default="./datasets")
     parser.add_argument("--leader_port", type=str, default=None)
     parser.add_argument("--max_duration", type=float, default=60.0, help="Max episode duration in seconds")
+    parser.add_argument("--no-upload", action="store_true", help="Don't upload to HuggingFace")
 
     args = parser.parse_args()
 
@@ -280,7 +304,7 @@ def main():
     )
     sim_robot = SO100Sim(sim_config)
     sim_robot.connect()
-    print("Simulation ready!")
+    speak("Simulation ready")
 
     # Connect leader arm
     print(f"\nConnecting leader arm on {leader_port}...")
@@ -288,7 +312,7 @@ def main():
     leader_bus.connect()
     leader_bus.calibration = load_calibration("leader_so100")
     leader_bus.disable_torque()
-    print("Leader arm ready!")
+    speak("Leader arm connected")
 
     # Create dataset using LeRobot v3.0 API
     print(f"\nCreating dataset: {repo_id}")
@@ -326,6 +350,9 @@ def main():
     try:
         ep_idx = 0
         while successful_episodes < args.num_episodes:
+            # Reset scene for new episode
+            sim_robot.reset_scene()
+
             saved, task_complete = record_episode(
                 sim_robot, leader_bus, dataset, ep_idx,
                 task=args.task,
@@ -343,6 +370,7 @@ def main():
             ep_idx += 1
 
             if successful_episodes < args.num_episodes:
+                speak(f"Episode {successful_episodes} of {args.num_episodes} complete")
                 cont = input("\nPress ENTER for next episode, 'q' to finish: ").strip().lower()
                 if cont == 'q':
                     break
@@ -351,10 +379,6 @@ def main():
         print("\n\nRecording interrupted.")
 
     finally:
-        # Cleanup
-        sim_robot.disconnect()
-        leader_bus.disconnect()
-
         # Summary
         print("\n" + "="*60)
         print("RECORDING COMPLETE")
@@ -363,18 +387,26 @@ def main():
         print(f"Tasks completed: {completed_tasks}")
         print(f"Dataset: {root_dir / repo_id}")
 
-        if successful_episodes > 0:
-            print("\nUpload to HuggingFace Hub? [y/N]: ", end='')
-            if input().strip().lower() == 'y':
-                print("Uploading...")
-                try:
-                    dataset.push_to_hub()
-                    print(f"Uploaded to: https://huggingface.co/datasets/{repo_id}")
-                except Exception as e:
-                    print(f"Upload failed: {e}")
-                    print(f"Upload manually later with: python -m lerobot.scripts.push_dataset_to_hub --repo-id {repo_id}")
+        # Auto-upload to HuggingFace
+        if successful_episodes > 0 and not args.no_upload:
+            speak("Uploading to HuggingFace")
+            print("\nUploading to HuggingFace Hub...")
+            try:
+                dataset.push_to_hub()
+                speak("Upload complete")
+                print(f"✅ Uploaded to: https://huggingface.co/datasets/{repo_id}")
+            except Exception as e:
+                speak("Upload failed")
+                print(f"❌ Upload failed: {e}")
+                print(f"Upload manually with:")
+                print(f"  python -c \"from lerobot.datasets.lerobot_dataset import LeRobotDataset; LeRobotDataset('{repo_id}', root='{root_dir}').push_to_hub()\"")
+        elif successful_episodes == 0:
+            print("\nNo episodes to upload.")
 
-        print("\nDone!")
+        # Cleanup
+        sim_robot.disconnect()
+        leader_bus.disconnect()
+        speak("Done")
 
 
 if __name__ == "__main__":

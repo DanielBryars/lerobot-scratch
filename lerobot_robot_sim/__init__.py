@@ -221,6 +221,16 @@ class SO100Sim(Robot):
     def configure(self) -> None:
         pass  # No configuration needed
 
+    def reset_scene(self) -> None:
+        """Reset the simulation to initial state (duplo back to start position)."""
+        if not self.is_connected:
+            return
+        mujoco.mj_resetData(self.mj_model, self.mj_data)
+        # Step a few times to settle
+        for _ in range(50):
+            mujoco.mj_step(self.mj_model, self.mj_data)
+        logger.info("Scene reset to initial state")
+
     def get_observation(self) -> dict[str, Any]:
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected.")
