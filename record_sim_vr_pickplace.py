@@ -376,10 +376,11 @@ def main():
     # Step 1: Put headset on
     speak("Put headset on")
     print("\nPut your VR headset on.")
+    speak("Press ENTER when headset is on to start the simulation")
     input("Press ENTER when headset is on...")
 
     # Step 2: Get into position (with rendering so user can see)
-    speak("Get into position")
+    speak("Position the view and then")
     print("\nSimulation is running - get into position.")
     speak("Press Enter when ready to start recording")
     print("Press ENTER when ready to start recording...")
