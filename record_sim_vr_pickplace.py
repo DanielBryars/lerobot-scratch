@@ -451,30 +451,33 @@ def main():
         print(f"Tasks completed: {completed_tasks}")
         print(f"Dataset: {root_dir / repo_id}")
 
+        # Finalize dataset (writes all metadata files including episodes parquet)
+        if successful_episodes > 0:
+            print("\nFinalizing dataset...")
+            dataset.finalize()
+            print("Dataset finalized.")
+
         # Auto-upload to HuggingFace
         if successful_episodes > 0 and not args.no_upload:
             speak("Uploading to HuggingFace")
             print("\nUploading to HuggingFace Hub...")
             try:
-                from huggingface_hub import upload_folder, HfApi
-
-                # Create repo if it doesn't exist
-                api = HfApi()
-                api.create_repo(repo_id=repo_id, repo_type="dataset", exist_ok=True)
-
-                # Upload entire dataset folder (more reliable than push_to_hub)
-                upload_folder(
-                    folder_path=str(root_dir),
-                    repo_id=repo_id,
-                    repo_type="dataset",
+                import subprocess
+                import sys
+                upload_script = Path(__file__).parent / "upload_dataset.py"
+                result = subprocess.run(
+                    [sys.executable, str(upload_script), str(root_dir), repo_id],
+                    cwd=Path(__file__).parent
                 )
-                speak("Upload complete")
-                print(f"✅ Uploaded to: https://huggingface.co/datasets/{repo_id}")
+                if result.returncode == 0:
+                    speak("Upload complete")
+                else:
+                    speak("Upload failed")
             except Exception as e:
                 speak("Upload failed")
                 print(f"❌ Upload failed: {e}")
                 print(f"Upload manually with:")
-                print(f"  python -c \"from lerobot.datasets.lerobot_dataset import LeRobotDataset; LeRobotDataset('{repo_id}', root='{root_dir}').push_to_hub()\"")
+                print(f"  python upload_dataset.py {root_dir} {repo_id}")
         elif successful_episodes == 0:
             print("\nNo episodes to upload.")
 
