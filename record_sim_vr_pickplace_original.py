@@ -29,8 +29,10 @@ logger = logging.getLogger(__name__)
 # Text-to-speech setup
 try:
     import pyttsx3
+    _tts_engine = pyttsx3.init()
+    _tts_engine.setProperty('rate', 180)  # Speed
     _tts_available = True
-except ImportError:
+except Exception:
     _tts_available = False
     logger.warning("pyttsx3 not available, using print-only announcements")
 
@@ -40,24 +42,10 @@ def speak(text: str):
     print(f"\n🔊 {text}")
     if _tts_available:
         try:
-            # Use subprocess to avoid COM threading conflicts with VR/OpenGL
-            import subprocess
-            # Use run() to wait for completion (avoids overlapping speech)
-            subprocess.run(
-                ['powershell', '-Command', f'Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak("{text}")'],
-                creationflags=subprocess.CREATE_NO_WINDOW,
-                timeout=10
-            )
-        except Exception as e:
-            # Fallback to pyttsx3
-            try:
-                engine = pyttsx3.init()
-                engine.setProperty('rate', 180)
-                engine.say(text)
-                engine.runAndWait()
-                engine.stop()
-            except Exception as e2:
-                print(f"  (TTS failed: {e2})")
+            _tts_engine.say(text)
+            _tts_engine.runAndWait()
+        except Exception:
+            pass
 
 
 # Import the sim plugin (registers so100_sim)
@@ -280,9 +268,6 @@ def main():
     parser.add_argument("--leader_port", type=str, default=None)
     parser.add_argument("--max_duration", type=float, default=60.0, help="Max episode duration in seconds")
     parser.add_argument("--no-upload", action="store_true", help="Don't upload to HuggingFace")
-    parser.add_argument("--pos_range", type=float, default=2.0, help="Position randomization range in cm (default 2)")
-    parser.add_argument("--rot_range", type=float, default=180.0, help="Rotation randomization range in degrees (default 180)")
-    parser.add_argument("--no-randomize", action="store_true", help="Disable position/rotation randomization")
 
     args = parser.parse_args()
 
@@ -311,7 +296,7 @@ def main():
     print("\nInitializing simulation with VR...")
     sim_config = SO100SimConfig(
         id="sim_recorder",
-        sim_cameras=["wrist_cam", "overhead_cam"],
+        sim_cameras=["wrist_cam"],
         camera_width=640,
         camera_height=480,
         enable_vr=True,
@@ -345,58 +330,18 @@ def main():
         features=features,
         image_writer_threads=4,
     )
-
-    # Add scene info to metadata
-    scene_info = sim_robot.get_scene_info()
-    dataset.meta.info["scene"] = scene_info
-    # Save updated info.json
-    info_path = root_dir / "meta" / "info.json"
-    with open(info_path, "w") as f:
-        json.dump(dataset.meta.info, f, indent=4)
     print("Dataset created (LeRobot v3.0 format)")
-    print(f"Scene: duplo at ({scene_info['objects']['duplo']['position']['x']:.3f}, "
-          f"{scene_info['objects']['duplo']['position']['y']:.3f}, "
-          f"{scene_info['objects']['duplo']['position']['z']:.3f})")
 
     print("\n" + "="*60)
     print(f"RECORDING: {args.task}")
     print(f"Episodes: {args.num_episodes}")
     print(f"FPS: {args.fps}")
-    if not args.no_randomize:
-        print(f"Randomization: ±{args.pos_range}cm position, ±{args.rot_range}° rotation")
-    else:
-        print("Randomization: disabled")
     print("="*60)
     print("\nControls during recording:")
     print("  'q' - Stop recording (keep episode)")
     print("  'd' - Discard current episode")
     print("\nTask auto-completes when Duplo lands in bowl!")
     print("="*60)
-
-    # Step 1: Put headset on
-    speak("Put headset on")
-    print("\nPut your VR headset on.")
-    input("Press ENTER when headset is on...")
-
-    # Step 2: Get into position (with rendering so user can see)
-    speak("Get into position")
-    print("\nSimulation is running - get into position.")
-    speak("Press Enter when ready to start recording")
-    print("Press ENTER when ready to start recording...")
-
-    import msvcrt
-    ready = False
-    while not ready:
-        # Keep VR rendering
-        sim_robot.render_vr()
-        time.sleep(0.03)  # ~30fps
-        # Check for Enter key (non-blocking)
-        if msvcrt.kbhit():
-            key = msvcrt.getch()
-            if key == b'\r':  # Enter key
-                ready = True
-
-    speak("Starting")
 
     # Record episodes
     successful_episodes = 0
@@ -405,17 +350,8 @@ def main():
     try:
         ep_idx = 0
         while successful_episodes < args.num_episodes:
-            # Reset scene for new episode (with optional randomization)
-            sim_robot.reset_scene(
-                randomize=not args.no_randomize,
-                pos_range=args.pos_range / 100.0,  # cm to meters
-                rot_range=np.radians(args.rot_range)  # degrees to radians
-            )
-
-            # Get and display the starting position
-            scene = sim_robot.get_scene_info()
-            duplo_pos = scene['objects']['duplo']['position']
-            print(f"\nDuplo start: ({duplo_pos['x']:.3f}, {duplo_pos['y']:.3f})")
+            # Reset scene for new episode
+            sim_robot.reset_scene()
 
             saved, task_complete = record_episode(
                 sim_robot, leader_bus, dataset, ep_idx,
@@ -434,7 +370,7 @@ def main():
             ep_idx += 1
 
             if successful_episodes < args.num_episodes:
-                speak(f"Episode {successful_episodes} of {args.num_episodes} complete. Press Enter for next episode.")
+                speak(f"Episode {successful_episodes} of {args.num_episodes} complete")
                 cont = input("\nPress ENTER for next episode, 'q' to finish: ").strip().lower()
                 if cont == 'q':
                     break
@@ -456,18 +392,7 @@ def main():
             speak("Uploading to HuggingFace")
             print("\nUploading to HuggingFace Hub...")
             try:
-                from huggingface_hub import upload_folder, HfApi
-
-                # Create repo if it doesn't exist
-                api = HfApi()
-                api.create_repo(repo_id=repo_id, repo_type="dataset", exist_ok=True)
-
-                # Upload entire dataset folder (more reliable than push_to_hub)
-                upload_folder(
-                    folder_path=str(root_dir),
-                    repo_id=repo_id,
-                    repo_type="dataset",
-                )
+                dataset.push_to_hub()
                 speak("Upload complete")
                 print(f"✅ Uploaded to: https://huggingface.co/datasets/{repo_id}")
             except Exception as e:

@@ -9,6 +9,8 @@ SET HF_USER=danbhf
 SET DATASET_BASE=sim_pick_place_duplo
 SET TASK="Pick up the Duplo block and place it in the bowl"
 SET NUM_EPISODES=10
+SET POS_RANGE=2
+SET ROT_RANGE=180
 
 REM Generate timestamp
 for /f %%i in ('powershell -command "Get-Date -Format yyyyMMdd_HHmmss"') do set TIMESTAMP=%%i
@@ -21,6 +23,7 @@ echo ========================================
 echo Dataset: %HF_USER%/%DATASET_NAME%
 echo Task: %TASK%
 echo Episodes: %NUM_EPISODES%
+echo Randomization: +/-%POS_RANGE%cm position, +/-%ROT_RANGE% deg rotation
 echo.
 echo Task is complete when Duplo lands in the bowl!
 echo.
@@ -37,7 +40,9 @@ REM Record using custom script with task completion detection
     --task %TASK% ^
     --num_episodes %NUM_EPISODES% ^
     --repo_id %HF_USER%/%DATASET_NAME% ^
-    --fps 30
+    --fps 30 ^
+    --pos_range %POS_RANGE% ^
+    --rot_range %ROT_RANGE%
 
 echo.
 echo Recording complete!

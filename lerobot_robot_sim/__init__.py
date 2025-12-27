@@ -221,15 +221,64 @@ class SO100Sim(Robot):
     def configure(self) -> None:
         pass  # No configuration needed
 
-    def reset_scene(self) -> None:
-        """Reset the simulation to initial state (duplo back to start position)."""
+    def reset_scene(self, randomize: bool = True, pos_range: float = 0.02, rot_range: float = np.pi) -> None:
+        """Reset the simulation to initial state with optional randomization.
+
+        Args:
+            randomize: If True, randomize duplo position and orientation
+            pos_range: Max random offset in meters (default ±2cm)
+            rot_range: Max random rotation in radians (default ±180°)
+        """
         if not self.is_connected:
             return
+
         mujoco.mj_resetData(self.mj_model, self.mj_data)
+
+        if randomize:
+            # Duplo free joint is at qpos[0:7]: pos(3) + quat(4)
+            # Add random XY offset (keep Z the same)
+            self.mj_data.qpos[0] += np.random.uniform(-pos_range, pos_range)  # X
+            self.mj_data.qpos[1] += np.random.uniform(-pos_range, pos_range)  # Y
+
+            # Random Z rotation (yaw)
+            angle = np.random.uniform(-rot_range, rot_range)
+            # Quaternion for Z rotation: [cos(θ/2), 0, 0, sin(θ/2)]
+            self.mj_data.qpos[3] = np.cos(angle / 2)  # w
+            self.mj_data.qpos[4] = 0  # x
+            self.mj_data.qpos[5] = 0  # y
+            self.mj_data.qpos[6] = np.sin(angle / 2)  # z
+
+            logger.info(f"Duplo randomized: pos=({self.mj_data.qpos[0]:.3f}, {self.mj_data.qpos[1]:.3f}), "
+                       f"rot={np.degrees(angle):.1f}°")
+
         # Step a few times to settle
         for _ in range(50):
             mujoco.mj_step(self.mj_model, self.mj_data)
-        logger.info("Scene reset to initial state")
+
+        logger.info("Scene reset")
+
+    def get_scene_info(self) -> dict:
+        """Get initial positions of scene objects for metadata."""
+        if not self.is_connected:
+            return {}
+
+        scene_info = {
+            "scene_xml": self.scene_xml.as_posix(),  # Use forward slashes
+            "objects": {}
+        }
+
+        # Get positions of key bodies
+        for body_name in ["duplo", "bowl"]:
+            try:
+                body_id = mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_BODY, body_name)
+                pos = self.mj_data.xpos[body_id].tolist()
+                scene_info["objects"][body_name] = {
+                    "position": {"x": pos[0], "y": pos[1], "z": pos[2]}
+                }
+            except Exception:
+                pass
+
+        return scene_info
 
     def get_observation(self) -> dict[str, Any]:
         if not self.is_connected:
@@ -332,6 +381,15 @@ class SO100Sim(Robot):
                 self.vr_renderer = None
 
         return {f"{motor}.pos": goal_pos.get(motor, 0.0) for motor in MOTOR_NAMES}
+
+    def render_vr(self) -> bool:
+        """Render a VR frame without changing robot state. Returns False if VR ended."""
+        if self.vr_renderer is not None:
+            if not self.vr_renderer.render_frame():
+                logger.warning("VR session ended")
+                self.vr_renderer = None
+                return False
+        return True
 
     def disconnect(self) -> None:
         if not self.is_connected:
